@@ -12,7 +12,7 @@ SRCS := $(wildcard $(SRC_DIR)/*.c)
 OBJS := $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(SRCS))
 
 # Default rule
-all: $(TARGET) 
+all: run 
 
 # Link the target
 $(TARGET): $(OBJS) | $(BIN_DIR)
@@ -31,6 +31,6 @@ clean:
 	rm -r
 
 run: $(TARGET)
-	./$(TARGET)
+	./$(TARGET) ./test_files/single_file.torrent
 
 .PHONY: all clean
