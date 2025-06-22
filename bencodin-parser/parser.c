@@ -1,5 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
+#include <string.h>
 
 // structure of a torrent file
 /*
@@ -32,21 +34,34 @@
 #define info(msg, ...) printf("[*] " msg " \n", ##__VA_ARGS__)
 #define warn(msg, ...) printf("[-] " msg " \n", ##__VA_ARGS__)
 
-char c;
+typedef struct
+{
+  uint64_t length;
+  char path[][];
+} file;
 
+typedef struct
+{
+  char *name;
+  uint64_t pieceLength;
+  char *pieces;
+  uint64_t length;
+  file files[];
+} Info;
 typedef struct
 {
   char *announce;
   char *createdBy;
-  long creationDate;
+  uint64_t creationDate;
   char *encoding;
-  char *info;
+  Info *info;
 } torrent;
 
+torrent meta = {0};
+
 char *parseString(FILE *fp);
-long int parseInteger(FILE *fp);
+uint64_t parseInteger(FILE *fp, char delimiter);
 char *getFileContent(FILE *fp);
-long reverseNumber(long num);
 void parseTokens(FILE *fp);
 
 int main(int argc, char **argv)
@@ -58,7 +73,7 @@ int main(int argc, char **argv)
   }
 
   info("Trying to open %s", argv[1]);
-  FILE *fp = fopen(argv[1], "r");
+  FILE *fp = fopen(argv[1], "rb");
 
   if (fp == NULL)
   {
@@ -85,89 +100,105 @@ char *getFileContent(FILE *fp)
     fclose(fp);
     exit(EXIT_FAILURE);
   }
+
   fread(buffer, sizeof(char), fileSize, fp);
   buffer[fileSize] = '\0';
-
   return buffer;
-}
-
-long reverseNumber(long num)
-{
-  int reversed = 0;
-  while (num != 0)
-  {
-    int digit = num % 10;
-    reversed = reversed * 10 + digit;
-    num /= 10;
-  }
-  return reversed;
 }
 
 void parseTokens(FILE *fp)
 {
+  int c;
   while ((c = fgetc(fp)) != EOF)
   {
-    if (c >= 0x30 && c <= 0x39)
-      parseString(fp);
-    else if (c == 'i')
-      parseInteger(fp);
-    else if (c == 'e')
-      break;
-    else
+    if (c >= '0' && c <= '9')
     {
-      info("Skipping non-digit char: %c", c);
-      continue;
-      // parseTokens(fp);
+      ungetc(c, fp);
+      char *str = parseString(fp);
+
+      if (strcmp(str, "announce") == 0)
+      {
+        meta.announce = parseString(fp);
+        info("Got announce: %s", meta.announce);
+      }
+      else if (strcmp(str, "created by") == 0)
+      {
+        meta.createdBy = parseString(fp);
+        info("Got created by: %s", meta.createdBy);
+      }
+      else if (strcmp(str, "creation date") == 0)
+      {
+        c = fgetc(fp);
+        meta.creationDate = parseInteger(fp, 'e');
+        info("Got creation date: %lld", meta.creationDate);
+      }
+      else if (strcmp(str, "encoding") == 0)
+      {
+        meta.encoding = parseString(fp);
+        info("Got encoding: %s", meta.encoding);
+      }
+
+      free(str);
+    }
+    else if (c == 'i')
+    {
+      uint64_t val = parseInteger(fp, 'e');
+      info("Parsed integer: %llu", val);
+    }
+    else if (c == 'e')
+    {
+      info("End of list or dictionary.");
+      break;
+    }
+    else if (c == 'd' || c == 'l')
+    {
+      info("Current position: %ld", ftell(fp));
+      info("Parsing List or Dictionary: %c", c);
+      parseTokens(fp);
     }
   }
 }
 
-long int parseInteger(FILE *fp)
+uint64_t parseInteger(FILE *fp, char delimiter)
 {
-  long int num = 0;
-  while ((c = getc(fp)) != EOF && c != 'e')
+  uint64_t num = 0;
+  int c;
+
+  while ((c = fgetc(fp)) != EOF && c != delimiter)
   {
     if (c >= '0' && c <= '9')
-      num = (num * 10) + (c - '0');
+    {
+      num = num * 10 + (c - '0');
+    }
+    else
+    {
+      warn("Invalid character in integer field!");
+      exit(-1);
+    }
   }
 
-  info("Parsed integer: %ld", num);
   return num;
 }
 
 char *parseString(FILE *fp)
 {
-  // info("Parsing a String...\n");
-  int len = 0;
-  ungetc(c, fp);
-
-  while ((c = fgetc(fp)) != EOF && c != ':')
-  {
-    if (c >= '0' && c <= '9')
-      len = (len * 10) + (c - '0');
-    else
-    {
-      warn("The given Torrent file is correpted!!\n");
-      exit(-1);
-    }
-  }
-
-  len += 1;
-  info("Got string length: %d", len - 1);
+  uint64_t len = (uint64_t)parseInteger(fp, ':');
 
   char *buf = (char *)malloc(len + 1);
   if (buf == NULL)
   {
-    warn("Malloc failed...\n");
+    warn("Malloc failed...");
     exit(-1);
   }
 
-  if (fgets(buf, len, fp) == NULL)
+  size_t read = fread(buf, 1, len, fp);
+  if (read != len)
   {
-    warn("Failed to read string...");
+    warn("Failed to read expected string length.");
+    free(buf);
     exit(-1);
   }
-  info("Got string: %s\n", buf);
 
+  buf[len] = '\0';
   return buf;
 }
