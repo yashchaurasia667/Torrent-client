@@ -33,12 +33,13 @@
 #define okay(msg, ...) printf("[+] " msg " \n", ##__VA_ARGS__)
 #define info(msg, ...) printf("[*] " msg " \n", ##__VA_ARGS__)
 #define warn(msg, ...) printf("[-] " msg " \n", ##__VA_ARGS__)
+#define HASH_LENGTH 20
 
 typedef struct
 {
   uint64_t length;
-  char path[][];
-} file;
+  char **path;
+} File;
 
 typedef struct
 {
@@ -46,7 +47,7 @@ typedef struct
   uint64_t pieceLength;
   char *pieces;
   uint64_t length;
-  file files[];
+  File *files;
 } Info;
 typedef struct
 {
@@ -54,10 +55,10 @@ typedef struct
   char *createdBy;
   uint64_t creationDate;
   char *encoding;
-  Info *info;
-} torrent;
+  Info info;
+} Torrent;
 
-torrent meta = {0};
+Torrent meta = {0};
 
 char *parseString(FILE *fp);
 uint64_t parseInteger(FILE *fp, char delimiter);
@@ -119,23 +120,46 @@ void parseTokens(FILE *fp)
       if (strcmp(str, "announce") == 0)
       {
         meta.announce = parseString(fp);
-        info("Got announce: %s", meta.announce);
+        info("announce URL: %s", meta.announce);
       }
       else if (strcmp(str, "created by") == 0)
       {
         meta.createdBy = parseString(fp);
-        info("Got created by: %s", meta.createdBy);
+        info("Created By: %s", meta.createdBy);
       }
       else if (strcmp(str, "creation date") == 0)
       {
-        c = fgetc(fp);
+        fgetc(fp);
         meta.creationDate = parseInteger(fp, 'e');
-        info("Got creation date: %lld", meta.creationDate);
+        info("Creation Date: %llu", meta.creationDate);
       }
       else if (strcmp(str, "encoding") == 0)
       {
         meta.encoding = parseString(fp);
-        info("Got encoding: %s", meta.encoding);
+        info("Encoding: %s", meta.encoding);
+      }
+      else if (strcmp(str, "length") == 0)
+      {
+        fgetc(fp);
+        meta.info.length = parseInteger(fp, 'e');
+        info("Length: %llu bytes", meta.info.length);
+      }
+      else if (strcmp(str, "name") == 0)
+      {
+        meta.info.name = parseString(fp);
+        info("Name: %s", meta.info.name);
+      }
+      else if (strcmp(str, "piece length") == 0)
+      {
+        fgetc(fp);
+        meta.info.pieceLength = parseInteger(fp, 'e');
+        info("Piece Length: %llu bytes", meta.info.pieceLength);
+      }
+      else if (strcmp(str, "pieces") == 0)
+      {
+        meta.info.pieces = parseString(fp);
+        info("Pieces: %s", meta.info.pieces);
+        printf("\n");
       }
 
       free(str);
@@ -143,17 +167,17 @@ void parseTokens(FILE *fp)
     else if (c == 'i')
     {
       uint64_t val = parseInteger(fp, 'e');
-      info("Parsed integer: %llu", val);
+      info("Parsed unknown integer: %llu", val);
     }
     else if (c == 'e')
     {
-      info("End of list or dictionary.");
+      // info("End of list or dictionary.");
       break;
     }
     else if (c == 'd' || c == 'l')
     {
-      info("Current position: %ld", ftell(fp));
-      info("Parsing List or Dictionary: %c", c);
+      printf("\n");
+      // info("Parsing List or Dictionary");
       parseTokens(fp);
     }
   }
