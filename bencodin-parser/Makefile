@@ -31,6 +31,6 @@ clean:
 	rm -r
 
 run: $(TARGET)
-	./$(TARGET) ./test_files/single_file.torrent
+	./$(TARGET) ./test_files/multiple_files.torrent
 
 .PHONY: all clean

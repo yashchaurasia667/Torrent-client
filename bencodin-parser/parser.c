@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <string.h>
 
 // structure of a torrent file
@@ -51,7 +52,9 @@ typedef struct
 } Info;
 typedef struct
 {
+  bool hasMultileFiles;
   char *announce;
+  char **announceList;
   char *createdBy;
   uint64_t creationDate;
   char *encoding;
@@ -64,6 +67,8 @@ char *parseString(FILE *fp);
 uint64_t parseInteger(FILE *fp, char delimiter);
 char *getFileContent(FILE *fp);
 void parseTokens(FILE *fp);
+void parseAnnounceList(FILE *fp);
+void parseFiles(FILE *fp);
 
 int main(int argc, char **argv)
 {
@@ -110,7 +115,7 @@ char *getFileContent(FILE *fp)
 void parseTokens(FILE *fp)
 {
   int c;
-  while ((c = fgetc(fp)) != EOF)
+  while ((c = fgetc(fp)) != EOF && c != 'e')
   {
     if (c >= '0' && c <= '9')
     {
@@ -121,6 +126,11 @@ void parseTokens(FILE *fp)
       {
         meta.announce = parseString(fp);
         info("announce URL: %s", meta.announce);
+      }
+      else if (strcmp(str, "announce-list") == 0)
+      {
+        info("Parsing Announce List...");
+        parseAnnounceList(fp);
       }
       else if (strcmp(str, "created by") == 0)
       {
@@ -161,6 +171,15 @@ void parseTokens(FILE *fp)
         info("Pieces: %s", meta.info.pieces);
         printf("\n");
       }
+      else if (strcmp(str, "files") == 0)
+      {
+        info("Parsing files...");
+        parseFiles(fp);
+      }
+      else
+      {
+        // info("Parsed unknown string: %s", str);
+      }
 
       free(str);
     }
@@ -169,14 +188,9 @@ void parseTokens(FILE *fp)
       uint64_t val = parseInteger(fp, 'e');
       info("Parsed unknown integer: %llu", val);
     }
-    else if (c == 'e')
-    {
-      // info("End of list or dictionary.");
-      break;
-    }
     else if (c == 'd' || c == 'l')
     {
-      printf("\n");
+      // printf("\n");
       // info("Parsing List or Dictionary");
       parseTokens(fp);
     }
@@ -225,4 +239,94 @@ char *parseString(FILE *fp)
 
   buf[len] = '\0';
   return buf;
+}
+
+void parseAnnounceList(FILE *fp)
+{
+  int c = fgetc(fp);
+  if (c != 'l')
+  {
+    warn("Malformed announce-list");
+    return;
+  }
+
+  char **urls = NULL;
+  size_t urlCount = 0;
+
+  while ((c = fgetc(fp)) != EOF && c != 'e')
+  {
+    if (c != 'l')
+    {
+      warn("Expected nested list in announce-list");
+      break;
+    }
+
+    while ((c = fgetc(fp)) != EOF && c != 'e')
+    {
+      ungetc(c, fp);
+      char *url = parseString(fp);
+      urls = realloc(urls, sizeof(char *) * (urlCount + 1));
+      urls[urlCount++] = url;
+
+      // info("Announce-list URL: %s", url);
+    }
+  }
+
+  meta.announceList = urls;
+}
+
+File parseFile(FILE *fp)
+{
+  File file;
+  int c = fgetc(fp);
+  if (c != 'd')
+  {
+    warn("Invalid file format");
+    exit(-1);
+  }
+
+  while ((c = fgetc(fp)) != EOF)
+  {
+
+    ungetc(c, fp);
+    char *str = parseString(fp);
+    if (strcmp(str, "length") == 0)
+    {
+      fgetc(fp);
+      file.length = parseInteger(fp, 'e');
+      info("file length: %llu", file.length);
+    }
+
+    else if (strcmp(str, "path") == 0)
+    {
+      c = fgetc(fp);
+      if (c != 'l')
+      {
+        warn("Invalid path format.");
+        exit(-1);
+      }
+      else
+      {
+        while((c=fgetc(fp)) != EOF && c != 'e') {
+          
+        }
+      }
+    }
+  }
+  return file;
+}
+
+void parseFiles(FILE *fp)
+{
+  // meta.info.files = {uint64_t length, char **path}[]
+  int c;
+  while ((c = fgetc(fp)) != EOF)
+  {
+    if (c != 'l')
+    {
+      warn("Invalid files format.");
+      exit(-1);
+    }
+    parseFile(fp);
+  }
 }
