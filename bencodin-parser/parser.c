@@ -49,6 +49,7 @@ typedef struct
   char *pieces;
   uint64_t length;
   File *files;
+  size_t fileCount;
 } Info;
 typedef struct
 {
@@ -173,24 +174,23 @@ void parseTokens(FILE *fp)
       }
       else if (strcmp(str, "files") == 0)
       {
-        info("Parsing files...");
+        // info("Parsing files...");
         parseFiles(fp);
       }
-      else
-      {
-        // info("Parsed unknown string: %s", str);
-      }
+      // else
+      // {
+      // info("Parsed unknown string: %s", str);
+      // }
 
       free(str);
     }
     else if (c == 'i')
     {
-      uint64_t val = parseInteger(fp, 'e');
-      info("Parsed unknown integer: %llu", val);
+      parseInteger(fp, 'e');
+      // info("Parsed unknown integer: %llu", val);
     }
     else if (c == 'd' || c == 'l')
     {
-      // printf("\n");
       // info("Parsing List or Dictionary");
       parseTokens(fp);
     }
@@ -278,55 +278,86 @@ void parseAnnounceList(FILE *fp)
 File parseFile(FILE *fp)
 {
   File file;
+  file.length = 0;
+  file.path = NULL;
+
+  size_t path_count = 0;
+
   int c = fgetc(fp);
   if (c != 'd')
   {
     warn("Invalid file format");
-    exit(-1);
+    exit(EXIT_FAILURE);
   }
 
-  while ((c = fgetc(fp)) != EOF)
+  while ((c = fgetc(fp)) != EOF && c != 'e')
   {
-
     ungetc(c, fp);
-    char *str = parseString(fp);
+    char *str = parseString(fp); // parse key
+
     if (strcmp(str, "length") == 0)
     {
-      fgetc(fp);
+      fgetc(fp); // skip 'i'
       file.length = parseInteger(fp, 'e');
-      info("file length: %llu", file.length);
     }
-
     else if (strcmp(str, "path") == 0)
     {
       c = fgetc(fp);
       if (c != 'l')
       {
         warn("Invalid path format.");
-        exit(-1);
+        exit(EXIT_FAILURE);
       }
-      else
+
+      while ((c = fgetc(fp)) != EOF && c != 'e')
       {
-        while((c=fgetc(fp)) != EOF && c != 'e') {
-          
+        ungetc(c, fp);
+        char *pathPart = parseString(fp);
+
+        file.path = realloc(file.path, sizeof(char *) * (path_count + 1));
+        if (!file.path)
+        {
+          warn("Memory allocation failed");
+          exit(EXIT_FAILURE);
         }
+
+        file.path[path_count++] = pathPart;
       }
+
+      file.path = realloc(file.path, sizeof(char *) * (path_count + 1));
+      file.path[path_count] = NULL;
     }
+
+    free(str);
   }
+
   return file;
 }
 
 void parseFiles(FILE *fp)
 {
   // meta.info.files = {uint64_t length, char **path}[]
-  int c;
-  while ((c = fgetc(fp)) != EOF)
+  int c = fgetc(fp);
+  if (c != 'l')
   {
-    if (c != 'l')
+    warn("Invalid files format.");
+    exit(-1);
+  }
+
+  meta.info.files = NULL;
+  meta.info.fileCount = 0;
+
+  while ((c = fgetc(fp)) != EOF && c != 'e')
+  {
+    ungetc(c, fp);
+    File f = parseFile(fp);
+
+    meta.info.files = realloc(meta.info.files, sizeof(File) * (meta.info.fileCount + 1));
+    if (!meta.info.files)
     {
-      warn("Invalid files format.");
+      warn("Failed to realloc memory for files.");
       exit(-1);
     }
-    parseFile(fp);
+    meta.info.files[meta.info.fileCount++] = f;
   }
 }
