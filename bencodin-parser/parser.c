@@ -1,9 +1,3 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdint.h>
-#include <stdbool.h>
-#include <string.h>
-
 // structure of a torrent file
 /*
 {
@@ -31,9 +25,15 @@
 }
 */
 
-#define okay(msg, ...) printf("[+] " msg " \n", ##__VA_ARGS__)
-#define info(msg, ...) printf("[*] " msg " \n", ##__VA_ARGS__)
-#define warn(msg, ...) printf("[-] " msg " \n", ##__VA_ARGS__)
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include <stdbool.h>
+#include <string.h>
+
+#define okay(msg, ...) printf("[+] " msg "\n", ##__VA_ARGS__)
+#define info(msg, ...) printf("[*] " msg "\n", ##__VA_ARGS__)
+#define warn(msg, ...) printf("[-] " msg "\n", ##__VA_ARGS__)
 #define HASH_LENGTH 20
 
 typedef struct
@@ -46,16 +46,19 @@ typedef struct
 {
   char *name;
   uint64_t pieceLength;
-  char *pieces;
+  uint8_t *pieces;
+  size_t pieceCount;
   uint64_t length;
   File *files;
   size_t fileCount;
 } Info;
+
 typedef struct
 {
-  bool hasMultileFiles;
+  bool hasMultipleFiles;
   char *announce;
   char **announceList;
+  uint32_t announceUrlCount;
   char *createdBy;
   uint64_t creationDate;
   char *encoding;
@@ -66,23 +69,24 @@ Torrent meta = {0};
 
 char *parseString(FILE *fp);
 uint64_t parseInteger(FILE *fp, char delimiter);
-char *getFileContent(FILE *fp);
 void parseTokens(FILE *fp);
 void parseAnnounceList(FILE *fp);
 void parseFiles(FILE *fp);
+File parseFile(FILE *fp);
+void parsePieces(FILE *fp);
+void freeTorrent(Torrent *torrent);
 
 int main(int argc, char **argv)
 {
-  if (argc == 1)
+  if (argc < 2)
   {
     warn("A file name is needed...");
     return -1;
   }
 
-  info("Trying to open %s", argv[1]);
+  // info("Trying to open %s", argv[1]);
   FILE *fp = fopen(argv[1], "rb");
-
-  if (fp == NULL)
+  if (!fp)
   {
     warn("Could not find %s", argv[1]);
     return -1;
@@ -91,26 +95,109 @@ int main(int argc, char **argv)
   parseTokens(fp);
   fclose(fp);
 
-  return 0;
-}
-
-char *getFileContent(FILE *fp)
-{
-  fseek(fp, 0, SEEK_END);
-  long fileSize = ftell(fp);
-  rewind(fp);
-
-  char *buffer = (char *)malloc(fileSize + 1);
-  if (buffer == NULL)
+  while (true)
   {
-    warn("Failed to allocate memory");
-    fclose(fp);
-    exit(EXIT_FAILURE);
+    printf("\n");
+    printf("Print info about the torrent file: \n");
+    printf("1. Type \n");
+    printf("2. Announce \n");
+    printf("3. Created by \n");
+    printf("4. Creation date \n");
+    printf("5. Encoding \n");
+    printf("6. Name \n");
+    printf("7. Piece Length \n");
+    printf("8. Piece Count \n");
+    printf("9. Pieces \n");
+
+    if (meta.hasMultipleFiles)
+    {
+      printf("10. Announce List \n");
+      printf("11. Files \n");
+      printf("12. File Count \n");
+    }
+    else
+    {
+      printf("10. Length \n");
+    }
+
+    int choice = 0;
+    printf("\nEnter your choice: ");
+    scanf("%d", &choice);
+    printf("\n");
+
+    switch (choice)
+    {
+    case 1:
+      printf("Type: ");
+      if (meta.hasMultipleFiles)
+        printf("Multiple file torrent \n");
+      else
+        printf("Single file torrent \n");
+      break;
+    case 2:
+      printf("Announce: %s \n", meta.announce);
+      break;
+    case 3:
+      printf("Created by: %s \n", meta.createdBy);
+      break;
+    case 4:
+      printf("Creation Date: %llu \n", meta.creationDate);
+      break;
+    case 5:
+      printf("Encoding: %s \n", meta.encoding);
+      break;
+    case 6:
+      printf("Name: %s \n", meta.info.name);
+      break;
+    case 7:
+      printf("Piece Length: %llu \n", meta.info.pieceLength);
+      break;
+    case 8:
+      printf("Piece Count: %llu \n", meta.info.pieceCount);
+      break;
+    case 9:
+      printf("Pieces: %s \n", meta.info.pieces);
+      break;
+    case 10:
+      if (meta.hasMultipleFiles && meta.announceList)
+      {
+        printf("Announce List: \n");
+        for (uint32_t i = 0; i < meta.announceUrlCount; i++)
+          printf("%s \n", meta.announceList[i]);
+        printf("\n");
+      }
+      else
+        printf("Length: %llu \n", meta.info.length);
+      break;
+    case 11:
+      if (meta.hasMultipleFiles)
+      {
+        printf("Files: \n");
+        for (size_t i = 0; i < meta.info.fileCount; i++)
+        {
+          printf("length: %llu", meta.info.files[i].length);
+          printf("path: ");
+          for (int j = 0; meta.info.files->path[j]; j++)
+            printf("/%s", meta.info.files->path[j]);
+          printf("\n");
+        }
+        printf("\n");
+      }
+      break;
+    case 12:
+      if (meta.hasMultipleFiles)
+        printf("File Count: %zu", meta.info.fileCount);
+      break;
+
+    default:
+      printf("Please choose one of the above options... \n");
+      break;
+    }
   }
 
-  fread(buffer, sizeof(char), fileSize, fp);
-  buffer[fileSize] = '\0';
-  return buffer;
+  freeTorrent(&meta);
+
+  return 0;
 }
 
 void parseTokens(FILE *fp)
@@ -126,125 +213,128 @@ void parseTokens(FILE *fp)
       if (strcmp(str, "announce") == 0)
       {
         meta.announce = parseString(fp);
-        info("announce URL: %s", meta.announce);
+        // info("Announce: %s", meta.announce);
       }
       else if (strcmp(str, "announce-list") == 0)
       {
-        info("Parsing Announce List...");
         parseAnnounceList(fp);
+        // info("Announce List parsed.");
       }
       else if (strcmp(str, "created by") == 0)
       {
         meta.createdBy = parseString(fp);
-        info("Created By: %s", meta.createdBy);
+        // info("Created by: %s", meta.createdBy);
       }
       else if (strcmp(str, "creation date") == 0)
       {
         fgetc(fp);
         meta.creationDate = parseInteger(fp, 'e');
-        info("Creation Date: %llu", meta.creationDate);
+        // info("Creation date: %llu", meta.creationDate);
       }
       else if (strcmp(str, "encoding") == 0)
       {
         meta.encoding = parseString(fp);
-        info("Encoding: %s", meta.encoding);
+        // info("Encoding: %s", meta.encoding);
       }
       else if (strcmp(str, "length") == 0)
       {
         fgetc(fp);
         meta.info.length = parseInteger(fp, 'e');
-        info("Length: %llu bytes", meta.info.length);
+        meta.hasMultipleFiles = false;
+        // info("Length: %llu", meta.info.length);
       }
       else if (strcmp(str, "name") == 0)
       {
         meta.info.name = parseString(fp);
-        info("Name: %s", meta.info.name);
+        // info("Name: %s", meta.info.name);
       }
       else if (strcmp(str, "piece length") == 0)
       {
         fgetc(fp);
         meta.info.pieceLength = parseInteger(fp, 'e');
-        info("Piece Length: %llu bytes", meta.info.pieceLength);
+        // info("Piece length: %llu", meta.info.pieceLength);
       }
       else if (strcmp(str, "pieces") == 0)
       {
-        meta.info.pieces = parseString(fp);
-        info("Pieces: %s", meta.info.pieces);
-        printf("\n");
+        parsePieces(fp);
+        // info("Parsed pieces.");
       }
       else if (strcmp(str, "files") == 0)
       {
-        // info("Parsing files...");
+        meta.hasMultipleFiles = true;
         parseFiles(fp);
+        // info("Parsed files.");
       }
-      // else
-      // {
-      // info("Parsed unknown string: %s", str);
-      // }
 
       free(str);
     }
     else if (c == 'i')
     {
       parseInteger(fp, 'e');
-      // info("Parsed unknown integer: %llu", val);
     }
     else if (c == 'd' || c == 'l')
     {
-      // info("Parsing List or Dictionary");
       parseTokens(fp);
     }
   }
 }
 
-uint64_t parseInteger(FILE *fp, char delimiter)
+void parsePieces(FILE *fp)
 {
-  uint64_t num = 0;
-  int c;
-
-  while ((c = fgetc(fp)) != EOF && c != delimiter)
+  uint64_t len = parseInteger(fp, ':');
+  meta.info.pieces = malloc(len);
+  if (!meta.info.pieces)
   {
-    if (c >= '0' && c <= '9')
-    {
-      num = num * 10 + (c - '0');
-    }
-    else
-    {
-      warn("Invalid character in integer field!");
-      exit(-1);
-    }
+    warn("Failed to allocate memory for pieces");
+    exit(EXIT_FAILURE);
   }
 
-  return num;
+  fread(meta.info.pieces, 1, len, fp);
+  meta.info.pieceCount = len / 20;
 }
 
 char *parseString(FILE *fp)
 {
-  uint64_t len = (uint64_t)parseInteger(fp, ':');
+  uint64_t len = parseInteger(fp, ':');
 
-  char *buf = (char *)malloc(len + 1);
-  if (buf == NULL)
+  char *buf = malloc(len + 1);
+  if (!buf)
   {
     warn("Malloc failed...");
-    exit(-1);
+    exit(EXIT_FAILURE);
   }
 
-  size_t read = fread(buf, 1, len, fp);
-  if (read != len)
+  if (fread(buf, 1, len, fp) != len)
   {
     warn("Failed to read expected string length.");
     free(buf);
-    exit(-1);
+    exit(EXIT_FAILURE);
   }
 
   buf[len] = '\0';
   return buf;
 }
 
+uint64_t parseInteger(FILE *fp, char delimiter)
+{
+  uint64_t num = 0;
+  int c;
+  while ((c = fgetc(fp)) != EOF && c != delimiter)
+  {
+    if (c >= '0' && c <= '9')
+      num = num * 10 + (c - '0');
+    else
+    {
+      warn("Invalid character in integer field!");
+      exit(EXIT_FAILURE);
+    }
+  }
+  return num;
+}
+
 void parseAnnounceList(FILE *fp)
 {
-  int c = fgetc(fp);
-  if (c != 'l')
+  if (fgetc(fp) != 'l')
   {
     warn("Malformed announce-list");
     return;
@@ -253,6 +343,7 @@ void parseAnnounceList(FILE *fp)
   char **urls = NULL;
   size_t urlCount = 0;
 
+  int c;
   while ((c = fgetc(fp)) != EOF && c != 'e')
   {
     if (c != 'l')
@@ -265,45 +356,46 @@ void parseAnnounceList(FILE *fp)
     {
       ungetc(c, fp);
       char *url = parseString(fp);
-      urls = realloc(urls, sizeof(char *) * (urlCount + 1));
+      char **temp = realloc(urls, sizeof(char *) * (urlCount + 1));
+      if (!temp)
+      {
+        warn("Failed to realloc announce list");
+        exit(EXIT_FAILURE);
+      }
+      urls = temp;
       urls[urlCount++] = url;
-
-      // info("Announce-list URL: %s", url);
     }
   }
 
+  meta.announceUrlCount = urlCount;
   meta.announceList = urls;
 }
 
 File parseFile(FILE *fp)
 {
-  File file;
-  file.length = 0;
-  file.path = NULL;
-
+  File file = {0};
   size_t path_count = 0;
 
-  int c = fgetc(fp);
-  if (c != 'd')
+  if (fgetc(fp) != 'd')
   {
     warn("Invalid file format");
     exit(EXIT_FAILURE);
   }
 
+  int c;
   while ((c = fgetc(fp)) != EOF && c != 'e')
   {
     ungetc(c, fp);
-    char *str = parseString(fp); // parse key
+    char *key = parseString(fp);
 
-    if (strcmp(str, "length") == 0)
+    if (strcmp(key, "length") == 0)
     {
-      fgetc(fp); // skip 'i'
+      fgetc(fp);
       file.length = parseInteger(fp, 'e');
     }
-    else if (strcmp(str, "path") == 0)
+    else if (strcmp(key, "path") == 0)
     {
-      c = fgetc(fp);
-      if (c != 'l')
+      if (fgetc(fp) != 'l')
       {
         warn("Invalid path format.");
         exit(EXIT_FAILURE);
@@ -314,13 +406,14 @@ File parseFile(FILE *fp)
         ungetc(c, fp);
         char *pathPart = parseString(fp);
 
-        file.path = realloc(file.path, sizeof(char *) * (path_count + 1));
-        if (!file.path)
+        char **temp = realloc(file.path, sizeof(char *) * (path_count + 1));
+        if (!temp)
         {
-          warn("Memory allocation failed");
+          warn("Memory allocation failed for path");
           exit(EXIT_FAILURE);
         }
 
+        file.path = temp;
         file.path[path_count++] = pathPart;
       }
 
@@ -328,7 +421,7 @@ File parseFile(FILE *fp)
       file.path[path_count] = NULL;
     }
 
-    free(str);
+    free(key);
   }
 
   return file;
@@ -336,28 +429,56 @@ File parseFile(FILE *fp)
 
 void parseFiles(FILE *fp)
 {
-  // meta.info.files = {uint64_t length, char **path}[]
-  int c = fgetc(fp);
-  if (c != 'l')
+  if (fgetc(fp) != 'l')
   {
     warn("Invalid files format.");
-    exit(-1);
+    exit(EXIT_FAILURE);
   }
 
   meta.info.files = NULL;
   meta.info.fileCount = 0;
 
+  int c;
   while ((c = fgetc(fp)) != EOF && c != 'e')
   {
     ungetc(c, fp);
     File f = parseFile(fp);
 
-    meta.info.files = realloc(meta.info.files, sizeof(File) * (meta.info.fileCount + 1));
-    if (!meta.info.files)
+    File *temp = realloc(meta.info.files, sizeof(File) * (meta.info.fileCount + 1));
+    if (!temp)
     {
       warn("Failed to realloc memory for files.");
-      exit(-1);
+      exit(EXIT_FAILURE);
     }
+
+    meta.info.files = temp;
     meta.info.files[meta.info.fileCount++] = f;
+  }
+}
+
+void freeTorrent(Torrent *torrent)
+{
+  free(torrent->announce);
+  free(torrent->createdBy);
+  free(torrent->encoding);
+  free(torrent->info.name);
+  free(torrent->info.pieces);
+
+  if (torrent->announceList)
+  {
+    // for (size_t i = 0; torrent->announceList[i]; ++i)
+    //   free(torrent->announceList[i]);
+    free(torrent->announceList);
+  }
+
+  if (torrent->info.files)
+  {
+    for (size_t i = 0; i < torrent->info.fileCount; ++i)
+    {
+      for (size_t j = 0; torrent->info.files[i].path && torrent->info.files[i].path[j]; ++j)
+        free(torrent->info.files[i].path[j]);
+      free(torrent->info.files[i].path);
+    }
+    free(torrent->info.files);
   }
 }
