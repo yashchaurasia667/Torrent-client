@@ -30,6 +30,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
+#include <time.h>
 
 #define okay(msg, ...) printf("[+] " msg "\n", ##__VA_ARGS__)
 #define info(msg, ...) printf("[*] " msg "\n", ##__VA_ARGS__)
@@ -60,7 +61,7 @@ typedef struct
   char **announceList;
   uint32_t announceUrlCount;
   char *createdBy;
-  uint64_t creationDate;
+  time_t creationDate;
   char *encoding;
   Info info;
 } Torrent;
@@ -75,6 +76,7 @@ void parseFiles(FILE *fp);
 File parseFile(FILE *fp);
 void parsePieces(FILE *fp);
 void freeTorrent(Torrent *torrent);
+uint32_t convertToMB(uint64_t byteSize);
 
 int main(int argc, char **argv)
 {
@@ -108,16 +110,16 @@ int main(int argc, char **argv)
     printf("7. Piece Length \n");
     printf("8. Piece Count \n");
     printf("9. Pieces \n");
+    printf("10. Announce List \n");
 
     if (meta.hasMultipleFiles)
     {
-      printf("10. Announce List \n");
       printf("11. Files \n");
       printf("12. File Count \n");
     }
     else
     {
-      printf("10. Length \n");
+      printf("11. Length \n");
     }
 
     int choice = 0;
@@ -141,7 +143,13 @@ int main(int argc, char **argv)
       printf("Created by: %s \n", meta.createdBy);
       break;
     case 4:
-      printf("Creation Date: %llu \n", meta.creationDate);
+      // printf("Creation Date: %llu \n", meta.creationDate);
+      struct tm *tm_info;
+      tm_info = gmtime(&meta.creationDate);
+
+      char buf[11];
+      strftime(buf, sizeof(buf), "%d/%m/%y", tm_info);
+      printf("Creation date: %s \n", buf);
       break;
     case 5:
       printf("Encoding: %s \n", meta.encoding);
@@ -150,7 +158,7 @@ int main(int argc, char **argv)
       printf("Name: %s \n", meta.info.name);
       break;
     case 7:
-      printf("Piece Length: %llu \n", meta.info.pieceLength);
+      printf("Piece Length: %u MB \n", convertToMB(meta.info.pieceLength));
       break;
     case 8:
       printf("Piece Count: %llu \n", meta.info.pieceCount);
@@ -159,7 +167,7 @@ int main(int argc, char **argv)
       printf("Pieces: %s \n", meta.info.pieces);
       break;
     case 10:
-      if (meta.hasMultipleFiles && meta.announceList)
+      if (meta.announceList)
       {
         printf("Announce List: \n");
         for (uint32_t i = 0; i < meta.announceUrlCount; i++)
@@ -167,7 +175,9 @@ int main(int argc, char **argv)
         printf("\n");
       }
       else
-        printf("Length: %llu \n", meta.info.length);
+      {
+        printf("No Announce List found in this Torrent File. \n");
+      }
       break;
     case 11:
       if (meta.hasMultipleFiles)
@@ -182,6 +192,10 @@ int main(int argc, char **argv)
           printf("\n");
         }
         printf("\n");
+      }
+      else
+      {
+        printf("Length: %u MB \n", convertToMB(meta.info.length));
       }
       break;
     case 12:
@@ -481,4 +495,9 @@ void freeTorrent(Torrent *torrent)
     }
     free(torrent->info.files);
   }
+}
+
+uint32_t convertToMB(uint64_t byteSize)
+{
+  return byteSize / (1024 * 1024);
 }

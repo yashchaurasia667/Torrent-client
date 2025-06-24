@@ -2,17 +2,17 @@ CC := gcc
 CFLAGS := -Wall -Wextra -O2 -Iinclude
 
 # Directories
-SRC_DIR := .
+SRC_DIR := ./src/bencoding-parser
 OBJ_DIR := build
 BIN_DIR := bin
-TARGET := $(BIN_DIR)/parser
+TARGET := $(BIN_DIR)/main
 
 # Source and object files
 SRCS := $(wildcard $(SRC_DIR)/*.c)
 OBJS := $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(SRCS))
 
 # Default rule
-all: run 
+all: parser
 
 # Link the target
 $(TARGET): $(OBJS) | $(BIN_DIR)
@@ -30,7 +30,7 @@ $(BIN_DIR) $(OBJ_DIR):
 clean:
 	rm -r
 
-run: $(TARGET)
-	./$(TARGET) ./test_files/multiple_files.torrent
+parser: $(TARGET)
+	./$(TARGET) ./src/bencoding-parser/test_files/multiple_files.torrent
 
 .PHONY: all clean
