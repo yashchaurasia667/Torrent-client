@@ -63,6 +63,7 @@ typedef struct
   char *createdBy;
   time_t creationDate;
   char *encoding;
+  char *comment;
   Info info;
 } Torrent;
 
@@ -249,6 +250,10 @@ void parseTokens(FILE *fp)
       {
         meta.encoding = parseString(fp);
         // info("Encoding: %s", meta.encoding);
+      }
+      else if (strcmp(str, "comment") == 0)
+      {
+        meta.comment = parseString(fp);
       }
       else if (strcmp(str, "length") == 0)
       {
