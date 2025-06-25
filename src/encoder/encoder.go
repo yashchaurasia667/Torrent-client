@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"os/user"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -33,25 +35,77 @@ type Torrent struct {
 	info             Info
 }
 
-var meta = Torrent{
-	announce:         "udp://tracker.openbittorrent.com:80/announce",
-	announceList:     []string{},
-	createdBy:        "",
-	creationDate:     time.Now().Unix(),
-	encoding:         "UTF-8",
-	comment:          "",
-	hasMultipleFiles: false,
-	info: Info{
-		name:        "",
-		pieceLength: 2,
-		pieces:      []byte{},
-		length:      0,
-		files:       []File{},
-	},
+func getPath() []File {
+	var path string
+	var info os.FileInfo
+	reader := bufio.NewReader(os.Stdin)
+
+	for {
+		fmt.Print("Path to the file [essential]: ")
+		input, err := reader.ReadString('\n')
+		if err != nil {
+			fmt.Println("Error reading input: ", err)
+			continue
+		}
+		path = strings.TrimSpace(input)
+		if path == "" {
+			continue
+		}
+
+		info, err = os.Stat(path)
+		if os.IsNotExist(err) {
+			fmt.Println("Path does not exist, Please enter a valid path.")
+			continue
+		} else if err != nil {
+			fmt.Println("Error:", err)
+			os.Exit(-1)
+		}
+		break
+	}
+
+	if info.IsDir() {
+		fmt.Println("The given path is a directory.")
+		return []File{}
+	} else {
+		fmt.Println("The given path is a file.")
+		fmt.Printf("The size of the given file is: %d bytes \n", info.Size())
+
+		delimeter := regexp.MustCompile(`[\\/|]+`)
+		parts := delimeter.Split(path, -1)
+		fmt.Println(parts[len(parts)-1])
+
+		return []File{
+			{
+				length: info.Size(),
+				path:   strings.Split(path, "/"),
+			},
+		}
+	}
 }
 
-func getDetails() {
-	var path string
+func getDetails() Torrent {
+	currentUser, err := user.Current()
+	if err != nil {
+		fmt.Println("Couldn't get the username.")
+		currentUser.Name = "User Not Found"
+	}
+
+	var meta = Torrent{
+		announce:         "udp://tracker.openbittorrent.com:80/announce",
+		announceList:     []string{},
+		createdBy:        currentUser.Name,
+		creationDate:     time.Now().Unix(),
+		encoding:         "UTF-8",
+		comment:          "",
+		hasMultipleFiles: false,
+		info: Info{
+			name:        "",
+			pieceLength: 2,
+			pieces:      []byte{},
+			length:      0,
+			files:       []File{},
+		},
+	}
 
 	reader := bufio.NewReader(os.Stdin)
 
@@ -68,7 +122,7 @@ func getDetails() {
 		}
 	}
 
-	fmt.Print("Author: ")
+	fmt.Printf("Created by [default: %s]: ", meta.createdBy)
 	meta.createdBy, _ = reader.ReadString('\n')
 	meta.createdBy = strings.TrimSpace(meta.createdBy)
 
@@ -94,8 +148,7 @@ func getDetails() {
 	inp, err := reader.ReadString('\n')
 
 	if err != nil {
-		fmt.Println("Error reading input:", err)
-		return
+		fmt.Println("Error reading input, using default:", err)
 	}
 
 	inp = strings.TrimSpace(inp)
@@ -108,34 +161,15 @@ func getDetails() {
 		}
 	}
 
-	for {
-		fmt.Print("Path to the file [essential]: ")
-		input, err := reader.ReadString('\n')
-		if err != nil {
-			fmt.Println("Error reading input: ", err)
-			continue
-		}
-		path = strings.TrimSpace(input)
-
-		if path != "" {
-			break
-		}
+	res := getPath()
+	switch len(res) {
+	case 1:
+		meta.info.length = res[0].length
+	default:
+		break
 	}
 
-	info, err := os.Stat(path)
-	if os.IsNotExist(err) {
-		fmt.Println("Path does not exist")
-	} else if err != nil {
-		fmt.Println("Error:", err)
-		return
-	}
-
-	if info.IsDir() {
-		fmt.Println("The given path is a directory.")
-	} else {
-		fmt.Println("The given path is a file.")
-	}
-
+	return meta
 }
 
 func main() {
