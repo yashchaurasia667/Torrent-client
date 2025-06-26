@@ -5,8 +5,10 @@ import (
 	"crypto/sha1"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/user"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -66,7 +68,49 @@ func getPieces(path string, pieceLength uint64) []byte {
 	return pieces
 }
 
-func traverseDirectory(path string) {
+func encryptFiles(path []string, pieceLength uint64) ([]File, []byte) {
+	var pieces []byte
+	var info os.FileInfo
+
+	for i := 0; i < len(path); i++ {
+		info, err := os.Stat(path[i])
+		if err != nil {
+			fmt.Println("Error:", err)
+			os.Exit(-1)
+		}
+		fmt.Printf("The size of the given file is: %d bytes \n", info.Size())
+
+		delimeter := regexp.MustCompile(`[\\/|]+`)
+		parts := delimeter.Split(path[i], -1)
+		fmt.Println(parts[len(parts)-1])
+		pieces := getPieces(path[i], pieceLength)
+	}
+
+	return []File{
+		{
+			length: uint64(info.Size()),
+			path:   parts,
+		},
+	}, pieces
+}
+
+func traverseDirectory(path string, pieceLength uint64) {
+	err := filepath.WalkDir(path, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		fmt.Println("Visited:", path)
+		info, err := os.Stat(path)
+
+		if !info.IsDir() {
+		}
+		return nil
+	})
+
+	if err != nil {
+		fmt.Println(err)
+	}
 }
 
 func getPath(pieceLength uint64) ([]File, []byte) {
@@ -99,22 +143,11 @@ func getPath(pieceLength uint64) ([]File, []byte) {
 
 	if info.IsDir() {
 		fmt.Println("The given path is a directory.")
+		traverseDirectory(path, pieceLength)
 		return []File{}, []byte{}
 	} else {
 		fmt.Println("The given path is a file.")
-		fmt.Printf("The size of the given file is: %d bytes \n", info.Size())
-
-		delimeter := regexp.MustCompile(`[\\/|]+`)
-		parts := delimeter.Split(path, -1)
-		fmt.Println(parts[len(parts)-1])
-		pieces := getPieces(path, pieceLength)
-
-		return []File{
-			{
-				length: uint64(info.Size()),
-				path:   parts,
-			},
-		}, pieces
+		encryptFiles()
 	}
 }
 
@@ -209,5 +242,6 @@ func getDetails() Torrent {
 }
 
 func main() {
-	getDetails()
+	// getDetails()
+	getPath(2 * 1000000)
 }
