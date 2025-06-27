@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -39,19 +38,27 @@ type Torrent struct {
 	info             Info
 }
 
-func getPieces(path string, pieceLength uint64) []byte {
+func getSHA1Sum(piece []byte) []byte {
+	hash := sha1.Sum(piece[:])
+	return hash[:]
+}
+
+func readFile(path string, pieceLength uint64, offset uint) [][]byte {
 	file, err := os.Open(path)
 	if err != nil {
-		fmt.Println("Error openning file:", err)
+		fmt.Printf("Error opening [%s]: %e \n", path, err)
 		os.Exit(-1)
 	}
 	defer file.Close()
+	var parts [][]byte
 
-	var pieces []byte
+	// forward the pointer by offset
+	file.Read(make([]byte, offset))
 
 	for {
 		buffer := make([]byte, pieceLength)
 		n, err := file.Read(buffer)
+
 		if err != nil && err != io.EOF {
 			fmt.Println("Error while reading the given file:", err)
 			os.Exit(-1)
@@ -61,39 +68,25 @@ func getPieces(path string, pieceLength uint64) []byte {
 			break
 		}
 
-		hash := sha1.Sum(buffer[:n])
-		pieces = append(pieces, hash[:]...)
+		parts = append(parts, buffer)
 	}
 
-	return pieces
+	return parts
 }
 
-func encryptFiles(path []string, pieceLength uint64) ([]File, []byte) {
+func encryptFiles(paths []string, pieceLength uint64) {
 	var pieces []byte
-	var info os.FileInfo
+	var bytesNext uint
 
-	for i := 0; i < len(path); i++ {
-		info, err := os.Stat(path[i])
-		if err != nil {
-			fmt.Println("Error:", err)
-			os.Exit(-1)
+	for i := 0; i < len(paths); i++ {
+		// read file at path[i]
+		parts := readFile(paths[i], pieceLength, bytesNext)
+		lenLast := len(parts[len(parts)-1])
+		if lenLast < int(pieceLength) {
+			
 		}
-		fmt.Printf("The size of the given file is: %d bytes \n", info.Size())
-
-		delimeter := regexp.MustCompile(`[\\/|]+`)
-		parts := delimeter.Split(path[i], -1)
-		fmt.Println(parts[len(parts)-1])
-		pieces := getPieces(path[i], pieceLength)
 	}
-
-	return []File{
-		{
-			length: uint64(info.Size()),
-			path:   parts,
-		},
-	}, pieces
 }
-
 func traverseDirectory(path string, pieceLength uint64) {
 	err := filepath.WalkDir(path, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -147,7 +140,7 @@ func getPath(pieceLength uint64) ([]File, []byte) {
 		return []File{}, []byte{}
 	} else {
 		fmt.Println("The given path is a file.")
-		encryptFiles()
+		fmt.Printf("The size of the given file is: %d bytes \n", info.Size())
 	}
 }
 
