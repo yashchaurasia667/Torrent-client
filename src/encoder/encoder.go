@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -74,20 +75,33 @@ func readFile(path string, pieceLength uint64, offset uint) [][]byte {
 	return parts
 }
 
-func encryptFiles(paths []string, pieceLength uint64) {
+func encryptFiles(paths [][]string, pieceLength uint64) []byte {
 	var pieces []byte
 	var bytesNext uint
 
 	for i := 0; i < len(paths); i++ {
 		// read file at path[i]
-		parts := readFile(paths[i], pieceLength, bytesNext)
+		path := strings.Join(paths[i], "/")
+		parts := readFile(path, pieceLength, bytesNext)
 		lenLast := len(parts[len(parts)-1])
-		if lenLast < int(pieceLength) {
-			
+		if lenLast < int(pieceLength) && i != len(paths)-1 {
+		}
+		for _, part := range parts {
+			pieces = append(pieces, part...)
 		}
 	}
+
+	return pieces
 }
-func traverseDirectory(path string, pieceLength uint64) {
+
+func createPath(path string) []string {
+	delimeter := regexp.MustCompile(`[\\/|]+`)
+	parts := delimeter.Split(path, -1)
+	return parts
+}
+
+func traverseDirectory(path string, pieceLength uint64) []File {
+	var paths []File
 	err := filepath.WalkDir(path, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -97,6 +111,7 @@ func traverseDirectory(path string, pieceLength uint64) {
 		info, err := os.Stat(path)
 
 		if !info.IsDir() {
+			paths = append(paths, File{uint64(info.Size()), createPath(path)})
 		}
 		return nil
 	})
@@ -104,6 +119,8 @@ func traverseDirectory(path string, pieceLength uint64) {
 	if err != nil {
 		fmt.Println(err)
 	}
+
+	return paths
 }
 
 func getPath(pieceLength uint64) ([]File, []byte) {
@@ -141,6 +158,8 @@ func getPath(pieceLength uint64) ([]File, []byte) {
 	} else {
 		fmt.Println("The given path is a file.")
 		fmt.Printf("The size of the given file is: %d bytes \n", info.Size())
+		pieces := encryptFiles([][]string{createPath(path)}, pieceLength)
+		return []File{{uint64(info.Size()), createPath(path)}}, pieces
 	}
 }
 
