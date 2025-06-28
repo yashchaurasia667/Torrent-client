@@ -44,6 +44,29 @@ func getSHA1Sum(piece []byte) []byte {
 	return hash[:]
 }
 
+func readPart(path string, partLength uint64) []byte {
+	file, err := os.Open(path)
+	if err != nil {
+		fmt.Printf("Failed to open file [%s]: %e", path, err)
+		os.Exit(-1)
+	}
+	defer file.Close()
+
+	buffer := make([]byte, partLength)
+	n, err := file.Read(buffer)
+
+	if err != nil && err != io.EOF {
+		fmt.Println("Error while reading the given file:", err)
+		os.Exit(-1)
+	}
+
+	if n == 0 {
+		fmt.Println("Empty file [%s], skipping", path)
+	}
+
+	return buffer
+}
+
 func readFile(path string, pieceLength uint64, offset uint) [][]byte {
 	file, err := os.Open(path)
 	if err != nil {
@@ -75,22 +98,39 @@ func readFile(path string, pieceLength uint64, offset uint) [][]byte {
 	return parts
 }
 
-func encryptFiles(paths [][]string, pieceLength uint64) []byte {
-	var pieces []byte
-	var bytesNext uint
+func checkFileParts(parts [][]byte, pieceLength uint64, paths [][]string) {
+	lenLast := len(parts[len(parts)-1])
+	remainingBytes := pieceLength - uint64(lenLast)
+	i := 1
 
-	for i := 0; i < len(paths); i++ {
-		// read file at path[i]
-		path := strings.Join(paths[i], "/")
-		parts := readFile(path, pieceLength, bytesNext)
-		lenLast := len(parts[len(parts)-1])
-		if lenLast < int(pieceLength) && i != len(paths)-1 {
-		}
-		for _, part := range parts {
-			pieces = append(pieces, part...)
-		}
+	// if the length of the last part of the file is less than pieceLength then get the remaining bytes from the next file
+	if remainingBytes > 0 && len(paths) > 1 {
+		part := readFile(strings.Join(paths[i], "/"), pieceLength, 0)
+		// prolly solve this using recursion 
+	} else {
+		return
 	}
 
+}
+
+func encryptFiles(paths [][]string, pieceLength uint64) []byte {
+	var pieces []byte
+	var parts [][]byte
+	var bytesNext uint
+
+	for i, path := range paths {
+		// read file at path[i]
+		path := strings.Join(path, "/")
+		part := readFile(path, pieceLength, bytesNext)
+		parts = append(parts, part...)
+
+		checkFileParts(part, pieceLength, paths[i:])
+	}
+
+	for _, part := range parts {
+		piece := getSHA1Sum(part)
+		pieces = append(pieces, piece...)
+	}
 	return pieces
 }
 
@@ -100,7 +140,7 @@ func createPath(path string) []string {
 	return parts
 }
 
-func traverseDirectory(path string, pieceLength uint64) []File {
+func traverseDirectory(path string) []File {
 	var paths []File
 	err := filepath.WalkDir(path, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -109,6 +149,10 @@ func traverseDirectory(path string, pieceLength uint64) []File {
 
 		fmt.Println("Visited:", path)
 		info, err := os.Stat(path)
+		if err != nil {
+			fmt.Printf("Failed to stat [%s]: %e", path, err)
+			os.Exit(-1)
+		}
 
 		if !info.IsDir() {
 			paths = append(paths, File{uint64(info.Size()), createPath(path)})
@@ -153,7 +197,7 @@ func getPath(pieceLength uint64) ([]File, []byte) {
 
 	if info.IsDir() {
 		fmt.Println("The given path is a directory.")
-		traverseDirectory(path, pieceLength)
+		traverseDirectory(path)
 		return []File{}, []byte{}
 	} else {
 		fmt.Println("The given path is a file.")
@@ -254,6 +298,6 @@ func getDetails() Torrent {
 }
 
 func main() {
-	// getDetails()
-	getPath(2 * 1000000)
+	getDetails()
+	// getPath(2 * 1000000)
 }
