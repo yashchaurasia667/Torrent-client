@@ -44,100 +44,43 @@ func getSHA1Sum(piece []byte) []byte {
 	return hash[:]
 }
 
-func readPart(path string, partLength uint64) []byte {
-	file, err := os.Open(path)
-	if err != nil {
-		fmt.Printf("Failed to open file [%s]: %e", path, err)
-		os.Exit(-1)
-	}
-	defer file.Close()
-
-	buffer := make([]byte, partLength)
-	n, err := file.Read(buffer)
-
-	if err != nil && err != io.EOF {
-		fmt.Println("Error while reading the given file:", err)
-		os.Exit(-1)
-	}
-
-	if n == 0 {
-		fmt.Println("Empty file [%s], skipping", path)
-	}
-
-	return buffer
-}
-
-func readFile(path string, pieceLength uint64, offset uint) [][]byte {
-	file, err := os.Open(path)
-	if err != nil {
-		fmt.Printf("Error opening [%s]: %e \n", path, err)
-		os.Exit(-1)
-	}
-	defer file.Close()
-	var parts [][]byte
-
-	// forward the pointer by offset
-	file.Read(make([]byte, offset))
-
-	for {
-		buffer := make([]byte, pieceLength)
-		n, err := file.Read(buffer)
-
-		if err != nil && err != io.EOF {
-			fmt.Println("Error while reading the given file:", err)
-			os.Exit(-1)
-		}
-
-		if n == 0 {
-			break
-		}
-
-		parts = append(parts, buffer)
-	}
-
-	return parts
-}
-
-func checkFileParts(parts [][]byte, pieceLength uint64, paths [][]string) {
-	lenLast := len(parts[len(parts)-1])
-	remainingBytes := pieceLength - uint64(lenLast)
-	i := 1
-
-	// if the length of the last part of the file is less than pieceLength then get the remaining bytes from the next file
-	if remainingBytes > 0 && len(paths) > 1 {
-		part := readFile(strings.Join(paths[i], "/"), pieceLength, 0)
-		// prolly solve this using recursion 
-	} else {
-		return
-	}
-
-}
-
-func encryptFiles(paths [][]string, pieceLength uint64) []byte {
-	var pieces []byte
-	var parts [][]byte
-	var bytesNext uint
-
-	for i, path := range paths {
-		// read file at path[i]
-		path := strings.Join(path, "/")
-		part := readFile(path, pieceLength, bytesNext)
-		parts = append(parts, part...)
-
-		checkFileParts(part, pieceLength, paths[i:])
-	}
-
-	for _, part := range parts {
-		piece := getSHA1Sum(part)
-		pieces = append(pieces, piece...)
-	}
-	return pieces
-}
-
 func createPath(path string) []string {
 	delimeter := regexp.MustCompile(`[\\/|]+`)
 	parts := delimeter.Split(path, -1)
 	return parts
+}
+
+func encryptFiles(files []File, pieceLength uint64) []byte {
+	var pieces []byte
+	var buffer []byte
+
+	for _, file := range files {
+		path := strings.Join(file.path, "/")
+		f, err := os.Open(path)
+
+		if err != nil && err != io.EOF {
+			fmt.Printf("Failed to open file [%s]: %e\n", path, err)
+			os.Exit(-1)
+		}
+		defer f.Close()
+
+		tmp := make([]byte, file.length)
+		f.Read(tmp)
+
+		buffer = append(buffer, tmp...)
+	}
+
+	for i := uint64(0); i+pieceLength < uint64(len(buffer)); i += pieceLength {
+		piece := getSHA1Sum(buffer[i : i+pieceLength])
+		pieces = append(pieces, piece...)
+	}
+	if rem := uint64(len(buffer)) % pieceLength; rem != 0 {
+		start := uint64(len(buffer)) - rem
+		piece := getSHA1Sum(buffer[start:])
+		pieces = append(pieces, piece...)
+	}
+
+	return pieces
 }
 
 func traverseDirectory(path string) []File {
@@ -147,7 +90,7 @@ func traverseDirectory(path string) []File {
 			return err
 		}
 
-		fmt.Println("Visited:", path)
+		// fmt.Println("Visited:", path)
 		info, err := os.Stat(path)
 		if err != nil {
 			fmt.Printf("Failed to stat [%s]: %e", path, err)
@@ -197,13 +140,16 @@ func getPath(pieceLength uint64) ([]File, []byte) {
 
 	if info.IsDir() {
 		fmt.Println("The given path is a directory.")
-		traverseDirectory(path)
-		return []File{}, []byte{}
+		files := traverseDirectory(path)
+		pieces := encryptFiles(files, pieceLength)
+		return files, pieces
 	} else {
 		fmt.Println("The given path is a file.")
 		fmt.Printf("The size of the given file is: %d bytes \n", info.Size())
-		pieces := encryptFiles([][]string{createPath(path)}, pieceLength)
-		return []File{{uint64(info.Size()), createPath(path)}}, pieces
+
+		file := []File{{uint64(info.Size()), createPath(path)}}
+		pieces := encryptFiles(file, pieceLength)
+		return file, pieces
 	}
 }
 
@@ -299,5 +245,4 @@ func getDetails() Torrent {
 
 func main() {
 	getDetails()
-	// getPath(2 * 1000000)
 }
