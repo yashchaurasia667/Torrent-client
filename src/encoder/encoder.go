@@ -39,15 +39,76 @@ type Torrent struct {
 	info             Info
 }
 
+// --- Bencode Helpers ---
+
+func bencodeString(value string) string {
+	return fmt.Sprintf("%d:%s", len(value), value)
+}
+
+func bencodeInt(value uint64) string {
+	return fmt.Sprintf("i%de", value)
+}
+
+func bencodeBytes(b []byte) string {
+	return fmt.Sprintf("%d:%s", len(b), string(b))
+}
+
+func bencodeFileList(files []File) string {
+	var out strings.Builder
+	out.WriteString("l")
+	for _, f := range files {
+		out.WriteString("d")
+		out.WriteString(bencodeString("length"))
+		out.WriteString(bencodeInt(f.length))
+
+		out.WriteString(bencodeString("path"))
+		out.WriteString("l")
+		for _, part := range f.path {
+			out.WriteString(bencodeString(part))
+		}
+		out.WriteString("e") // end path list
+		out.WriteString("e") // end file dict
+	}
+	out.WriteString("e") // end file list
+	return out.String()
+}
+
+func bencodeInfo(info Info, hasMultipleFiles bool) string {
+	var out strings.Builder
+	out.WriteString("d")
+
+	// Sorted keys
+	out.WriteString(bencodeString("name"))
+	out.WriteString(bencodeString(info.name))
+
+	out.WriteString(bencodeString("piece length"))
+	out.WriteString(bencodeInt(info.pieceLength))
+
+	if hasMultipleFiles {
+		out.WriteString(bencodeString("files"))
+		out.WriteString(bencodeFileList(info.files))
+	} else {
+		out.WriteString(bencodeString("length"))
+		out.WriteString(bencodeInt(info.length))
+	}
+
+	out.WriteString(bencodeString("pieces"))
+	out.WriteString(bencodeBytes(info.pieces))
+
+	out.WriteString("e") // end info dict
+	return out.String()
+}
+
+// --- Torrent Helpers ---
+
 func getSHA1Sum(piece []byte) []byte {
-	hash := sha1.Sum(piece[:])
+	hash := sha1.Sum(piece)
 	return hash[:]
 }
 
 func createPath(path string) []string {
 	delimeter := regexp.MustCompile(`[\\/|]+`)
-	parts := delimeter.Split(path, -1)
-	return parts
+	return delimeter.Split(path, -1)
 }
 
 func encryptFiles(files []File, pieceLength uint64) []byte {
@@ -57,23 +118,28 @@ func encryptFiles(files []File, pieceLength uint64) []byte {
 	for _, file := range files {
 		path := strings.Join(file.path, "/")
 		f, err := os.Open(path)
-
-		if err != nil && err != io.EOF {
+		if err != nil {
 			fmt.Printf("Failed to open file [%s]: %e\n", path, err)
 			os.Exit(-1)
 		}
 		defer f.Close()
 
 		tmp := make([]byte, file.length)
-		f.Read(tmp)
+		_, err = f.Read(tmp)
+		if err != nil && err != io.EOF {
+			fmt.Printf("Error reading file [%s]: %e\n", path, err)
+			os.Exit(-1)
+		}
 
 		buffer = append(buffer, tmp...)
 	}
 
-	for i := uint64(0); i+pieceLength < uint64(len(buffer)); i += pieceLength {
+	for i := uint64(0); i+pieceLength <= uint64(len(buffer)); i += pieceLength {
 		piece := getSHA1Sum(buffer[i : i+pieceLength])
 		pieces = append(pieces, piece...)
 	}
+
+	// Handle final piece (if not aligned)
 	if rem := uint64(len(buffer)) % pieceLength; rem != 0 {
 		start := uint64(len(buffer)) - rem
 		piece := getSHA1Sum(buffer[start:])
@@ -89,24 +155,19 @@ func traverseDirectory(path string) []File {
 		if err != nil {
 			return err
 		}
-
-		// fmt.Println("Visited:", path)
 		info, err := os.Stat(path)
 		if err != nil {
-			fmt.Printf("Failed to stat [%s]: %e", path, err)
+			fmt.Printf("Failed to stat [%s]: %e\n", path, err)
 			os.Exit(-1)
 		}
-
 		if !info.IsDir() {
 			paths = append(paths, File{uint64(info.Size()), createPath(path)})
 		}
 		return nil
 	})
-
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println("Directory walk failed:", err)
 	}
-
 	return paths
 }
 
@@ -116,20 +177,17 @@ func getPath(pieceLength uint64) ([]File, []byte) {
 	reader := bufio.NewReader(os.Stdin)
 
 	for {
-		fmt.Print("Path to the file [essential]: ")
-		input, err := reader.ReadString('\n')
-		if err != nil {
-			fmt.Println("Error reading input: ", err)
-			continue
-		}
+		fmt.Print("Path to the file or directory [required]: ")
+		input, _ := reader.ReadString('\n')
 		path = strings.TrimSpace(input)
 		if path == "" {
 			continue
 		}
 
+		var err error
 		info, err = os.Stat(path)
 		if os.IsNotExist(err) {
-			fmt.Println("Path does not exist, Please enter a valid path.")
+			fmt.Println("Path does not exist.")
 			continue
 		} else if err != nil {
 			fmt.Println("Error:", err)
@@ -139,14 +197,10 @@ func getPath(pieceLength uint64) ([]File, []byte) {
 	}
 
 	if info.IsDir() {
-		fmt.Println("The given path is a directory.")
 		files := traverseDirectory(path)
 		pieces := encryptFiles(files, pieceLength)
 		return files, pieces
 	} else {
-		fmt.Println("The given path is a file.")
-		fmt.Printf("The size of the given file is: %d bytes \n", info.Size())
-
 		file := []File{{uint64(info.Size()), createPath(path)}}
 		pieces := encryptFiles(file, pieceLength)
 		return file, pieces
@@ -190,6 +244,7 @@ func getDetails() Torrent {
 		if input == "" {
 			break
 		}
+		meta.announceList = append(meta.announceList, input)
 	}
 
 	fmt.Printf("Created by [default: %s]: ", meta.createdBy)
@@ -243,6 +298,68 @@ func getDetails() Torrent {
 	return meta
 }
 
+func createTorrent() {
+	meta := getDetails()
+
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Print("Output path [default: ./]: ")
+	input, _ := reader.ReadString('\n')
+	input = strings.TrimSpace(input)
+	if input == "" {
+		input = "./"
+	}
+
+	var out strings.Builder
+	out.WriteString("d")
+	out.WriteString(bencodeString("announce"))
+	out.WriteString(bencodeString(meta.announce))
+
+	if len(meta.announceList) > 0 {
+		out.WriteString(bencodeString("announce-list"))
+		out.WriteString("l")
+		for _, tracker := range meta.announceList {
+			out.WriteString("l")
+			out.WriteString(bencodeString(tracker))
+			out.WriteString("e")
+		}
+		out.WriteString("e")
+	}
+
+	out.WriteString(bencodeString("created by"))
+	out.WriteString(bencodeString(meta.createdBy))
+
+	out.WriteString(bencodeString("creation date"))
+	out.WriteString(bencodeInt(uint64(meta.creationDate)))
+
+	out.WriteString(bencodeString("encoding"))
+	out.WriteString(bencodeString(meta.encoding))
+
+	if meta.comment != "" {
+		out.WriteString(bencodeString("comment"))
+		out.WriteString(bencodeString(meta.comment))
+	}
+
+	out.WriteString(bencodeString("info"))
+	out.WriteString(bencodeInfo(meta.info, meta.hasMultipleFiles))
+	out.WriteString("e") // end root dict
+
+	outputPath := filepath.Join(input, meta.info.name+".torrent")
+	file, err := os.Create(outputPath)
+	if err != nil {
+		fmt.Println("Failed to create torrent file:", err)
+		os.Exit(-1)
+	}
+	defer file.Close()
+
+	_, err = file.WriteString(out.String())
+	if err != nil {
+		fmt.Println("Failed to write torrent file:", err)
+		os.Exit(-1)
+	}
+
+	fmt.Println("Torrent created at:", outputPath)
+}
+
 func main() {
-	getDetails()
+	createTorrent()
 }
