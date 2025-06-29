@@ -5,14 +5,14 @@ CFLAGS := -Wall -Wextra -O2 -Iinclude
 SRC_DIR := ./src/bencoding-parser
 OBJ_DIR := build
 BIN_DIR := bin
-TARGET := $(BIN_DIR)/main
+TARGET := $(BIN_DIR)/parser
 
 # Source and object files
 SRCS := $(wildcard $(SRC_DIR)/*.c)
 OBJS := $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(SRCS))
 
 # Default rule
-all: parser
+all: $(TARGET)
 
 # Link the target
 $(TARGET): $(OBJS) | $(BIN_DIR)
