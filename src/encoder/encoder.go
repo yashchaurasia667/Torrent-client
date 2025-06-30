@@ -224,7 +224,7 @@ func getDetails() Torrent {
 		hasMultipleFiles: false,
 		info: Info{
 			name:        "",
-			pieceLength: 2,
+			pieceLength: 16,
 			pieces:      []byte{},
 			length:      0,
 			files:       []File{},
@@ -269,7 +269,7 @@ func getDetails() Torrent {
 		}
 	}
 
-	fmt.Printf("Piece Size [default: %dMB]: ", meta.info.pieceLength)
+	fmt.Printf("Piece Size [default: %dKB]: ", meta.info.pieceLength)
 	inp, err := reader.ReadString('\n')
 
 	if err != nil {
@@ -286,13 +286,15 @@ func getDetails() Torrent {
 		}
 	}
 
-	info, pieces := getPath(meta.info.pieceLength * 1000000)
-	switch len(info) {
+	files, pieces := getPath(meta.info.pieceLength * 1024)
+	switch len(files) {
 	case 1:
-		meta.info.length = info[0].length
+		meta.info.length = files[0].length
 		meta.info.pieces = pieces
 	default:
-		break
+		meta.hasMultipleFiles = true
+		meta.info.files = files
+		meta.info.pieces = pieces
 	}
 
 	return meta
