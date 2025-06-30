@@ -29,6 +29,7 @@ type Info struct {
 }
 
 type Torrent struct {
+	name             string
 	announce         string
 	announceList     []string
 	createdBy        string
@@ -215,6 +216,7 @@ func getDetails() Torrent {
 	}
 
 	var meta = Torrent{
+		name:             "",
 		announce:         "udp://tracker.openbittorrent.com:80/announce",
 		announceList:     []string{},
 		createdBy:        currentUser.Name,
@@ -224,7 +226,7 @@ func getDetails() Torrent {
 		hasMultipleFiles: false,
 		info: Info{
 			name:        "",
-			pieceLength: 16,
+			pieceLength: 16 * 1024,
 			pieces:      []byte{},
 			length:      0,
 			files:       []File{},
@@ -256,20 +258,20 @@ func getDetails() Torrent {
 	meta.comment = strings.TrimSpace(meta.comment)
 
 	for {
-		fmt.Print("Name of the file [essential]: ")
+		fmt.Print("Name of the file [required]: ")
 		input, err := reader.ReadString('\n')
 		if err != nil {
 			fmt.Println("Error reading input: ", err)
 			continue
 		}
-		meta.info.name = strings.TrimSpace(input)
+		meta.name = strings.TrimSpace(input)
 
-		if meta.info.name != "" {
+		if meta.name != "" {
 			break
 		}
 	}
 
-	fmt.Printf("Piece Size [default: %dKB]: ", meta.info.pieceLength)
+	fmt.Printf("Piece Size [default: %dKB]: ", meta.info.pieceLength/1024)
 	inp, err := reader.ReadString('\n')
 
 	if err != nil {
@@ -282,17 +284,19 @@ func getDetails() Torrent {
 		if err != nil {
 			fmt.Println("Invalid number, using default:", meta.info.pieceLength)
 		} else {
-			meta.info.pieceLength = uint64(uInp)
+			meta.info.pieceLength = uint64(uInp) * 1024
 		}
 	}
 
-	files, pieces := getPath(meta.info.pieceLength * 1024)
+	files, pieces := getPath(meta.info.pieceLength)
 	switch len(files) {
 	case 1:
 		meta.info.length = files[0].length
 		meta.info.pieces = pieces
+		meta.info.name = files[0].path[len(files[0].path)-1]
 	default:
 		meta.hasMultipleFiles = true
+		meta.info.name = meta.name
 		meta.info.files = files
 		meta.info.pieces = pieces
 	}
@@ -345,7 +349,7 @@ func createTorrent() {
 	out.WriteString(bencodeInfo(meta.info, meta.hasMultipleFiles))
 	out.WriteString("e") // end root dict
 
-	outputPath := filepath.Join(input, meta.info.name+".torrent")
+	outputPath := filepath.Join(input, meta.name+".torrent")
 	file, err := os.Create(outputPath)
 	if err != nil {
 		fmt.Println("Failed to create torrent file:", err)
