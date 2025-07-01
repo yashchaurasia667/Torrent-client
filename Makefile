@@ -2,7 +2,7 @@ CC := gcc
 CFLAGS := -Wall -Wextra -O2 -Iinclude
 
 # Directories
-SRC_DIR := ./src/bencoding-parser
+SRC_DIR := ./src/parser
 OBJ_DIR := build
 BIN_DIR := bin
 TARGET := $(BIN_DIR)/parser
@@ -31,6 +31,6 @@ clean:
 	rm -r
 
 parser: $(TARGET)
-	./$(TARGET) ./src/bencoding-parser/test_files/multiple_files.torrent
+	./$(TARGET) ./src/parser/test_files/single_file.torrent
 
 .PHONY: all clean

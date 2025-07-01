@@ -25,47 +25,7 @@
 }
 */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdint.h>
-#include <stdbool.h>
-#include <string.h>
-#include <time.h>
-
-#define okay(msg, ...) printf("[+] " msg "\n", ##__VA_ARGS__)
-#define info(msg, ...) printf("[*] " msg "\n", ##__VA_ARGS__)
-#define warn(msg, ...) printf("[-] " msg "\n", ##__VA_ARGS__)
-#define HASH_LENGTH 20
-
-typedef struct
-{
-  uint64_t length;
-  char **path;
-} File;
-
-typedef struct
-{
-  char *name;
-  uint64_t pieceLength;
-  uint8_t *pieces;
-  size_t pieceCount;
-  uint64_t length;
-  File *files;
-  size_t fileCount;
-} Info;
-
-typedef struct
-{
-  bool hasMultipleFiles;
-  char *announce;
-  char **announceList;
-  uint32_t announceUrlCount;
-  char *createdBy;
-  time_t creationDate;
-  char *encoding;
-  char *comment;
-  Info info;
-} Torrent;
+#include "parser.h"
 
 Torrent meta = {0};
 
@@ -78,6 +38,7 @@ File parseFile(FILE *fp);
 void parsePieces(FILE *fp);
 void freeTorrent(Torrent *torrent);
 uint32_t convertToMB(uint64_t byteSize);
+void displayInformation();
 
 int main(int argc, char **argv)
 {
@@ -98,117 +59,23 @@ int main(int argc, char **argv)
   parseTokens(fp);
   fclose(fp);
 
-  while (true)
+  FILE *json = fopen("./src/peers/meta.json", "w");
+  if (!json)
   {
-    printf("\n");
-    printf("Print info about the torrent file: \n");
-    printf("1. Type \n");
-    printf("2. Announce \n");
-    printf("3. Created by \n");
-    printf("4. Creation date \n");
-    printf("5. Encoding \n");
-    printf("6. Name \n");
-    printf("7. Piece Length \n");
-    printf("8. Piece Count \n");
-    printf("9. Pieces \n");
-    printf("10. Announce List \n");
-
-    if (meta.hasMultipleFiles)
-    {
-      printf("11. Files \n");
-      printf("12. File Count \n");
-    }
-    else
-    {
-      printf("11. Length \n");
-    }
-
-    int choice = 0;
-    printf("\nEnter your choice: ");
-    scanf("%d", &choice);
-    printf("\n");
-
-    switch (choice)
-    {
-    case 1:
-      printf("Type: ");
-      if (meta.hasMultipleFiles)
-        printf("Multiple file torrent \n");
-      else
-        printf("Single file torrent \n");
-      break;
-    case 2:
-      printf("Announce: %s \n", meta.announce);
-      break;
-    case 3:
-      printf("Created by: %s \n", meta.createdBy);
-      break;
-    case 4:
-      // printf("Creation Date: %llu \n", meta.creationDate);
-      struct tm *tm_info;
-      tm_info = gmtime(&meta.creationDate);
-
-      char buf[11];
-      strftime(buf, sizeof(buf), "%d/%m/%y", tm_info);
-      printf("Creation date: %s \n", buf);
-      break;
-    case 5:
-      printf("Encoding: %s \n", meta.encoding);
-      break;
-    case 6:
-      printf("Name: %s \n", meta.info.name);
-      break;
-    case 7:
-      printf("Piece Length: %u MB \n", convertToMB(meta.info.pieceLength));
-      break;
-    case 8:
-      printf("Piece Count: %llu \n", meta.info.pieceCount);
-      break;
-    case 9:
-      printf("Pieces: %s \n", meta.info.pieces);
-      break;
-    case 10:
-      if (meta.announceList)
-      {
-        printf("Announce List: \n");
-        for (uint32_t i = 0; i < meta.announceUrlCount; i++)
-          printf("%s \n", meta.announceList[i]);
-        printf("\n");
-      }
-      else
-      {
-        printf("No Announce List found in this Torrent File. \n");
-      }
-      break;
-    case 11:
-      if (meta.hasMultipleFiles)
-      {
-        printf("Files: \n");
-        for (size_t i = 0; i < meta.info.fileCount; i++)
-        {
-          printf("length: %llu", meta.info.files[i].length);
-          printf("path: ");
-          for (int j = 0; meta.info.files->path[j]; j++)
-            printf("/%s", meta.info.files->path[j]);
-          printf("\n");
-        }
-        printf("\n");
-      }
-      else
-      {
-        printf("Length: %u MB \n", convertToMB(meta.info.length));
-      }
-      break;
-    case 12:
-      if (meta.hasMultipleFiles)
-        printf("File Count: %zu", meta.info.fileCount);
-      break;
-
-    default:
-      printf("Please choose one of the above options... \n");
-      break;
-    }
+    warn("Failed to open meta.json for writing");
+    return -1;
   }
+  dumpToJson(json, &meta);
+  fclose(json);
+  okay("Dumped parsed torrent to meta.json");
+
+  char ch = 'N';
+  printf("Do you want to display the parsed information? [y/N] ");
+  scanf("%c", &ch);
+
+  if(ch == 'Y' || ch == 'y') 
+    displayInformation();
+
 
   freeTorrent(&meta);
 
@@ -505,4 +372,119 @@ void freeTorrent(Torrent *torrent)
 uint32_t convertToMB(uint64_t byteSize)
 {
   return byteSize / (1024 * 1024);
+}
+
+void displayInformation()
+{
+  while (true)
+  {
+    printf("\n");
+    printf("Print info about the torrent file: \n");
+    printf("1. Type \n");
+    printf("2. Announce \n");
+    printf("3. Created by \n");
+    printf("4. Creation date \n");
+    printf("5. Encoding \n");
+    printf("6. Name \n");
+    printf("7. Piece Length \n");
+    printf("8. Piece Count \n");
+    printf("9. Pieces \n");
+    printf("10. Announce List \n");
+
+    if (meta.hasMultipleFiles)
+    {
+      printf("11. Files \n");
+      printf("12. File Count \n");
+    }
+    else
+    {
+      printf("11. Length \n");
+    }
+
+    int choice = 0;
+    printf("\nEnter your choice: ");
+    scanf("%d", &choice);
+    printf("\n");
+
+    switch (choice)
+    {
+    case 1:
+      printf("Type: ");
+      if (meta.hasMultipleFiles)
+        printf("Multiple file torrent \n");
+      else
+        printf("Single file torrent \n");
+      break;
+    case 2:
+      printf("Announce: %s \n", meta.announce);
+      break;
+    case 3:
+      printf("Created by: %s \n", meta.createdBy);
+      break;
+    case 4:
+      // printf("Creation Date: %llu \n", meta.creationDate);
+      struct tm *tm_info;
+      tm_info = gmtime(&meta.creationDate);
+
+      char buf[11];
+      strftime(buf, sizeof(buf), "%d/%m/%y", tm_info);
+      printf("Creation date: %s \n", buf);
+      break;
+    case 5:
+      printf("Encoding: %s \n", meta.encoding);
+      break;
+    case 6:
+      printf("Name: %s \n", meta.info.name);
+      break;
+    case 7:
+      printf("Piece Length: %u MB \n", convertToMB(meta.info.pieceLength));
+      break;
+    case 8:
+      printf("Piece Count: %llu \n", meta.info.pieceCount);
+      break;
+    case 9:
+      printf("Pieces: %s \n", meta.info.pieces);
+      break;
+    case 10:
+      if (meta.announceList)
+      {
+        printf("Announce List: \n");
+        for (uint32_t i = 0; i < meta.announceUrlCount; i++)
+          printf("%s \n", meta.announceList[i]);
+        printf("\n");
+      }
+      else
+      {
+        printf("No Announce List found in this Torrent File. \n");
+      }
+      break;
+    case 11:
+      if (meta.hasMultipleFiles)
+      {
+        printf("Files: \n");
+        for (size_t i = 0; i < meta.info.fileCount; i++)
+        {
+          printf("length: %llu", meta.info.files[i].length);
+          printf("path: ");
+          for (int j = 0; meta.info.files->path[j]; j++)
+            printf("/%s", meta.info.files->path[j]);
+          printf("\n");
+        }
+        printf("\n");
+      }
+      else
+      {
+        printf("Length: %u MB \n", convertToMB(meta.info.length));
+      }
+      break;
+    case 12:
+      if (meta.hasMultipleFiles)
+        printf("File Count: %zu", meta.info.fileCount);
+      break;
+
+    default:
+      printf("Please choose one of the above options... \n");
+      break;
+    }
+  }
 }
