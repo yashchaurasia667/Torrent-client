@@ -41,6 +41,7 @@ typedef struct
   char *encoding;
   char *comment;
   Info info;
+  char *infoHash;
 } Torrent;
 
 void dumpToJson(FILE *out, Torrent *t);

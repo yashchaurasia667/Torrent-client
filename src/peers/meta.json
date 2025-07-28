@@ -1,0 +1,14 @@
+{
+  "announce": "http://bttracker.debian.org:6969/announce",
+  "createdBy": "mktorrent 1.1",
+  "creationDate": 1747482458,
+  "encoding": "",
+  "comment": "Debian CD from cdimage.debian.org",
+  "info": {
+    "name": "debian-12.11.0-amd64-netinst.iso",
+    "pieceLength": 262144,
+    "pieceCount": 2680,
+    "length": 702545920
+  },
+  "announceList": []
+}
