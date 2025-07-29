@@ -29,7 +29,7 @@
 
 Torrent meta = {0};
 
-char *bencodeAppend(char *dest, const char *newStr);
+char *append(char *dest, const char *newStr);
 char *parseString(FILE *fp);
 uint64_t parseInteger(FILE *fp, char delimiter);
 void parseTokens(FILE *fp);
@@ -127,7 +127,8 @@ void parseTokens(FILE *fp)
 
       else if (strcmp(str, "length") == 0)
       {
-        bencodeAppend(info, str);
+        char *len = bencodeString(str);
+
         fgetc(fp);
         meta.info.length = parseInteger(fp, 'e');
         meta.hasMultipleFiles = false;
@@ -167,38 +168,6 @@ void parseTokens(FILE *fp)
       parseTokens(fp);
     }
   }
-}
-
-char *bencodeAppend(char *dest, const char *newStr)
-{
-  if (newStr == NULL)
-  {
-    return dest;
-  }
-
-  size_t strLen = strlen(newStr);
-  size_t destLen = (dest != NULL) ? strlen(dest) : 0;
-  char len[32];
-  sprintf(len, "%zu", strLen);
-  size_t numDigits = strlen(len);
-
-  size_t totalSize = destLen + strLen + numDigits + 2;
-  char *res = (char *)malloc(totalSize);
-  if (res == NULL)
-  {
-    warn("Memory allocation failed in bencode append.");
-    return NULL;
-  }
-
-  if (dest != NULL && destLen > 0)
-    strcpy(res, dest);
-  else
-    res[0] = '\0';
-
-  sprintf(res + destLen, "%s:%s", len, newStr);
-
-  // printf("strLen: %zu\ndestLen: %zu\nlen: %s", strLen, destLen, len);
-  return "";
 }
 
 void parsePieces(FILE *fp)

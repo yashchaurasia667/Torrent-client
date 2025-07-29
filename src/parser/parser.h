@@ -7,6 +7,7 @@
 #include <stdbool.h>
 #include <string.h>
 #include <time.h>
+#include <math.h>
 
 #define okay(msg, ...) printf("[+] " msg "\n", ##__VA_ARGS__)
 #define info(msg, ...) printf("[*] " msg "\n", ##__VA_ARGS__)
@@ -45,5 +46,8 @@ typedef struct
 } Torrent;
 
 void dumpToJson(FILE *out, Torrent *t);
+char *bencodeString(char *str);
+char *bencodeInteger(uint64_t n);
+char *append(char *str1, char *str2);
 
 #endif
