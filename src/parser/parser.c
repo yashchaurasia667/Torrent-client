@@ -29,7 +29,6 @@
 
 Torrent meta = {0};
 
-char *append(char *dest, const char *newStr);
 char *parseString(FILE *fp);
 uint64_t parseInteger(FILE *fp, char delimiter);
 void parseTokens(FILE *fp);
@@ -66,6 +65,7 @@ int main(int argc, char **argv)
     warn("Failed to open meta.json for writing");
     return -1;
   }
+
   dumpToJson(json, &meta);
   fclose(json);
   okay("Dumped parsed torrent to meta.json");
@@ -127,22 +127,28 @@ void parseTokens(FILE *fp)
 
       else if (strcmp(str, "length") == 0)
       {
-        char *len = bencodeString(str);
-
         fgetc(fp);
         meta.info.length = parseInteger(fp, 'e');
         meta.hasMultipleFiles = false;
+
+        // char *n = bencodeInteger(meta.info.length);
+        // char *len = bencodeString(str);
+        // info = append(info, len, n);
         // info("Length: %llu", meta.info.length);
       }
       else if (strcmp(str, "name") == 0)
       {
         meta.info.name = parseString(fp);
+
+        // info = append(info, bencodeString(str), bencodeString(meta.info.name));
         // info("Name: %s", meta.info.name);
       }
       else if (strcmp(str, "piece length") == 0)
       {
         fgetc(fp);
         meta.info.pieceLength = parseInteger(fp, 'e');
+
+        // info = append(info, bencodeString(str), bencodeInteger(meta.info.pieceLength));
         // info("Piece length: %llu", meta.info.pieceLength);
       }
       else if (strcmp(str, "pieces") == 0)

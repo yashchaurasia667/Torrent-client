@@ -48,6 +48,6 @@ typedef struct
 void dumpToJson(FILE *out, Torrent *t);
 char *bencodeString(char *str);
 char *bencodeInteger(uint64_t n);
-char *append(char *str1, char *str2);
+char *append(char *str1, char *str2, char *str3);
 
 #endif

@@ -24,12 +24,13 @@ char *bencodeInteger(uint64_t n)
   return res;
 }
 
-char *append(char *str1, char *str2)
+char *append(char *str1, char *str2, char *str3)
 {
   size_t len1 = (str1 == NULL) ? strlen(str1) : 0;
-  size_t len2 = strlen(str2);
+  size_t len2 = (str2 == NULL) ? strlen(str2) : 0;
+  size_t len3 = (str3 == NULL) ? strlen(str3) : 0;
 
-  char *res = (char *)malloc(len1 + len2 + (int)log10(len1) + (int)log10(len2) + 3);
+  char *res = (char *)malloc(len1 + len2 + (int)log10(len1) + (int)log10(len2) + len3 + (int)log10(len3) + 4);
   if (res == NULL)
   {
     warn("Failed to allocate memory for res in append.");
@@ -41,6 +42,6 @@ char *append(char *str1, char *str2)
   else
     res[0] = '\0';
 
-  sprintf(res + len1, "%s%s", res, str2);
+  sprintf(res + len1, "%s%s%s", res, str2, str3);
   return res;
 }
