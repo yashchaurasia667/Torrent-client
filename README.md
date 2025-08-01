@@ -20,3 +20,5 @@ $ ./bin/parser {name_of_torrent_file_to_decode}
 $ cd ./src/encoder
 $ go run .
 ```
+
+## Bittorrent Protocol 
