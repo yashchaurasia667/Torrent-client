@@ -1,15 +1,15 @@
-package main
+package parser
 
 import (
 	"crypto/sha1"
 	"encoding/base32"
 	"encoding/hex"
-	"encoding/json"
+	// "encoding/json"
 	"errors"
-	"flag"
+	// "flag"
 	"fmt"
 	"io"
-	"os"
+	// "os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -131,25 +131,31 @@ func (r *benReader) readString() ([]byte, error) {
 	if r.pos >= len(r.b) || r.b[r.pos] < '0' || r.b[r.pos] > '9' {
 		return nil, fmt.Errorf("bencode: expected string length at %d", r.pos)
 	}
+
 	var n int
 	for {
 		if r.pos >= len(r.b) {
 			return nil, io.ErrUnexpectedEOF
 		}
+
 		ch := r.b[r.pos]
 		if ch == ':' {
 			r.pos++
 			break
 		}
+
 		if ch < '0' || ch > '9' {
 			return nil, fmt.Errorf("bencode: invalid length at %d", r.pos)
 		}
+
 		n = n*10 + int(ch-'0')
 		r.pos++
 	}
+
 	if r.pos+n > len(r.b) {
 		return nil, io.ErrUnexpectedEOF
 	}
+
 	data := r.b[r.pos : r.pos+n]
 	r.pos += n
 	return data, nil
@@ -161,10 +167,12 @@ func (r *benReader) skipAny() error {
 	if err != nil {
 		return err
 	}
+
 	switch ch {
 	case 'i':
 		_, err := r.readInt()
 		return err
+
 	case 'l':
 		_, _ = r.readByte() // 'l'
 		for {
@@ -180,6 +188,7 @@ func (r *benReader) skipAny() error {
 				return err
 			}
 		}
+
 	case 'd':
 		_, _ = r.readByte()
 		for {
@@ -231,20 +240,25 @@ func decodeTorrent(b []byte) (*metaTop, error) {
 	if err := r.expectByte('d'); err != nil {
 		return nil, err
 	}
+
 	var mt metaTop
 	for {
 		ch, err := r.peek()
 		if err != nil {
 			return nil, err
 		}
+
 		if ch == 'e' {
 			_, _ = r.readByte()
 			break
 		}
+
 		keyb, err := r.readString()
+
 		if err != nil {
 			return nil, err
 		}
+
 		key := string(keyb)
 		switch key {
 		case "announce":
@@ -253,12 +267,14 @@ func decodeTorrent(b []byte) (*metaTop, error) {
 				return nil, err
 			}
 			mt.announce = string(v)
+
 		case "announce-list":
 			al, err := readStringListOfLists(r)
 			if err != nil {
 				return nil, fmt.Errorf("announce-list: %w", err)
 			}
 			mt.announceList = al
+
 		case "creation date":
 			iv, err := r.readInt()
 			if err != nil {
@@ -266,24 +282,28 @@ func decodeTorrent(b []byte) (*metaTop, error) {
 			}
 			t := time.Unix(iv, 0).UTC()
 			mt.creationDate = &t
+
 		case "comment":
 			v, err := r.readString()
 			if err != nil {
 				return nil, err
 			}
 			mt.comment = string(v)
+
 		case "created by":
 			v, err := r.readString()
 			if err != nil {
 				return nil, err
 			}
 			mt.createdBy = string(v)
+
 		case "encoding":
 			v, err := r.readString()
 			if err != nil {
 				return nil, err
 			}
 			mt.encoding = string(v)
+
 		case "info":
 			// capture raw span exactly as encoded
 			start := r.pos
@@ -291,15 +311,18 @@ func decodeTorrent(b []byte) (*metaTop, error) {
 				return nil, err
 			}
 			end := r.pos
+
 			// decode the info dict by re-parsing this span
 			sub := newReader(b[start:end])
 			info, piecesRaw, err := decodeInfo(sub)
 			if err != nil {
 				return nil, err
 			}
+
 			mt.info = info
 			mt.infoSpan = span{start, end}
 			mt.piecesRaw = piecesRaw
+
 		default:
 			// unknown key: skip value
 			if err := r.skipAny(); err != nil {
@@ -307,6 +330,7 @@ func decodeTorrent(b []byte) (*metaTop, error) {
 			}
 		}
 	}
+
 	return &mt, nil
 }
 
@@ -355,19 +379,23 @@ func decodeInfo(r *benReader) (InfoDict, []byte, error) {
 	if err := r.expectByte('d'); err != nil {
 		return info, nil, err
 	}
+
 	for {
 		ch, err := r.peek()
 		if err != nil {
 			return info, nil, err
 		}
+
 		if ch == 'e' {
 			_, _ = r.readByte()
 			break
 		}
+
 		keyb, err := r.readString()
 		if err != nil {
 			return info, nil, err
 		}
+
 		key := string(keyb)
 		switch key {
 		case "name":
@@ -376,36 +404,42 @@ func decodeInfo(r *benReader) (InfoDict, []byte, error) {
 				return info, nil, err
 			}
 			info.Name = string(v)
+
 		case "piece length":
 			iv, err := r.readInt()
 			if err != nil {
 				return info, nil, err
 			}
 			info.PieceLength = iv
+
 		case "private":
 			iv, err := r.readInt()
 			if err != nil {
 				return info, nil, err
 			}
 			info.Private = (iv != 0)
+
 		case "length":
 			iv, err := r.readInt()
 			if err != nil {
 				return info, nil, err
 			}
 			info.Length = &iv
+
 		case "files":
 			files, err := decodeInfoFiles(r)
 			if err != nil {
 				return info, nil, err
 			}
 			info.Files = files
+
 		case "pieces":
 			v, err := r.readString()
 			if err != nil {
 				return info, nil, err
 			}
 			piecesRaw = append([]byte(nil), v...) // copy
+
 		default:
 			if err := r.skipAny(); err != nil {
 				return info, nil, err
@@ -503,20 +537,25 @@ func assembleTorrent(b []byte) (*Torrent, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	if mt.infoSpan.start <= 0 || mt.infoSpan.end <= mt.infoSpan.start || mt.infoSpan.end > len(b) {
 		return nil, errors.New("invalid info dictionary span")
 	}
+
 	// info-hash (exact raw bytes of info dict)
 	h := sha1.Sum(b[mt.infoSpan.start:mt.infoSpan.end])
+
 	// pieces parsing
 	if len(mt.piecesRaw) == 0 || len(mt.piecesRaw)%20 != 0 {
 		return nil, fmt.Errorf("invalid pieces field length: %d", len(mt.piecesRaw))
 	}
+
 	pieceCount := len(mt.piecesRaw) / 20
 	pieceHashes := make([]string, 0, pieceCount)
-	for i := 0; i < pieceCount; i++ {
+	for i := range pieceCount {
 		pieceHashes = append(pieceHashes, hex.EncodeToString(mt.piecesRaw[i*20:(i+1)*20]))
 	}
+
 	// files + total length
 	var files []TorrentFile
 	var total int64
@@ -614,63 +653,65 @@ func escapeMagnet(s string) string {
 // CLI
 // -----------------------------
 
-func main() {
-	var outJSON bool
-	flag.BoolVar(&outJSON, "json", true, "print JSON summary (default true)")
-	flag.Parse()
-	if flag.NArg() < 1 {
-		fmt.Fprintln(os.Stderr, "usage: torrentparse [--json] file.torrent")
-		os.Exit(2)
-	}
-	path := flag.Arg(0)
-	data, err := os.ReadFile(path)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "read:", err)
-		os.Exit(1)
-	}
-	t, err := assembleTorrent(data)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "parse:", err)
-		os.Exit(1)
-	}
-	if outJSON {
-		enc := json.NewEncoder(os.Stdout)
-		enc.SetIndent("", "  ")
-		if err := enc.Encode(t); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-		return
-	}
-	// pretty print
-	fmt.Printf("Announce: %s\n", t.Announce)
-	if len(t.AnnounceList) > 0 {
-		fmt.Println("Trackers:")
-		for i, tier := range t.AnnounceList {
-			fmt.Printf("  Tier %d:\n", i+1)
-			for _, tr := range tier {
-				fmt.Printf("    %s\n", tr)
-			}
-		}
-	}
-	if t.CreationDate != nil {
-		fmt.Printf("Creation date: %s\n", t.CreationDate.Format(time.RFC3339))
-	}
-	if t.Comment != "" {
-		fmt.Printf("Comment: %s\n", t.Comment)
-	}
-	if t.CreatedBy != "" {
-		fmt.Printf("Created by: %s\n", t.CreatedBy)
-	}
-	fmt.Printf("Info hash (hex): %s\n", t.InfoHash)
-	fmt.Printf("Info hash (base32): %s\n", t.InfoHashB32)
-	fmt.Printf("Name: %s\n", t.Info.Name)
-	fmt.Printf("Piece length: %d\n", t.Info.PieceLength)
-	fmt.Printf("Private: %v\n", t.Info.Private)
-	fmt.Printf("Total length: %d bytes\n", t.TotalLength)
-	fmt.Printf("Files: %d\n", len(t.Files))
-	for _, f := range t.Files {
-		fmt.Printf("  %12d  %s\n", f.Length, f.Path)
-	}
-	fmt.Printf("Magnet: %s\n", t.Magnet)
-}
+// func main() {
+// 	var outJSON bool
+// 	flag.BoolVar(&outJSON, "json", true, "print JSON summary (default true)")
+// 	flag.Parse()
+// 	if flag.NArg() < 1 {
+// 		fmt.Fprintln(os.Stderr, "usage: torrentparse [--json] file.torrent")
+// 		os.Exit(2)
+// 	}
+
+// 	path := flag.Arg(0)
+// 	data, err := os.ReadFile(path)
+// 	if err != nil {
+// 		fmt.Fprintln(os.Stderr, "read:", err)
+// 		os.Exit(1)
+// 	}
+
+// 	t, err := assembleTorrent(data)
+// 	if err != nil {
+// 		fmt.Fprintln(os.Stderr, "parse:", err)
+// 		os.Exit(1)
+// 	}
+// 	if outJSON {
+// 		enc := json.NewEncoder(os.Stdout)
+// 		enc.SetIndent("", "  ")
+// 		if err := enc.Encode(t); err != nil {
+// 			fmt.Fprintln(os.Stderr, err)
+// 			os.Exit(1)
+// 		}
+// 		return
+// 	}
+// 	// pretty print
+// 	fmt.Printf("Announce: %s\n", t.Announce)
+// 	if len(t.AnnounceList) > 0 {
+// 		fmt.Println("Trackers:")
+// 		for i, tier := range t.AnnounceList {
+// 			fmt.Printf("  Tier %d:\n", i+1)
+// 			for _, tr := range tier {
+// 				fmt.Printf("    %s\n", tr)
+// 			}
+// 		}
+// 	}
+// 	if t.CreationDate != nil {
+// 		fmt.Printf("Creation date: %s\n", t.CreationDate.Format(time.RFC3339))
+// 	}
+// 	if t.Comment != "" {
+// 		fmt.Printf("Comment: %s\n", t.Comment)
+// 	}
+// 	if t.CreatedBy != "" {
+// 		fmt.Printf("Created by: %s\n", t.CreatedBy)
+// 	}
+// 	fmt.Printf("Info hash (hex): %s\n", t.InfoHash)
+// 	fmt.Printf("Info hash (base32): %s\n", t.InfoHashB32)
+// 	fmt.Printf("Name: %s\n", t.Info.Name)
+// 	fmt.Printf("Piece length: %d\n", t.Info.PieceLength)
+// 	fmt.Printf("Private: %v\n", t.Info.Private)
+// 	fmt.Printf("Total length: %d bytes\n", t.TotalLength)
+// 	fmt.Printf("Files: %d\n", len(t.Files))
+// 	for _, f := range t.Files {
+// 		fmt.Printf("  %12d  %s\n", f.Length, f.Path)
+// 	}
+// 	fmt.Printf("Magnet: %s\n", t.Magnet)
+// }
