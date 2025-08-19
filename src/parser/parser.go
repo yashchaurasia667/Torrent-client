@@ -4,12 +4,12 @@ import (
 	"crypto/sha1"
 	"encoding/base32"
 	"encoding/hex"
-	// "encoding/json"
+	"encoding/json"
 	"errors"
-	// "flag"
+	"flag"
 	"fmt"
 	"io"
-	// "os"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -65,9 +65,9 @@ type benReader struct {
 	pos int
 }
 
-func newReader(b []byte) *benReader { return &benReader{b: b} }
+func NewReader(b []byte) *benReader { return &benReader{b: b} }
 
-func (r *benReader) peek() (byte, error) {
+func (r *benReader) Peek() (byte, error) {
 	if r.pos >= len(r.b) {
 		return 0, io.ErrUnexpectedEOF
 	}
@@ -163,7 +163,7 @@ func (r *benReader) readString() ([]byte, error) {
 
 // skipAny advances r.pos past the next value
 func (r *benReader) skipAny() error {
-	ch, err := r.peek()
+	ch, err := r.Peek()
 	if err != nil {
 		return err
 	}
@@ -176,7 +176,7 @@ func (r *benReader) skipAny() error {
 	case 'l':
 		_, _ = r.readByte() // 'l'
 		for {
-			ch, err := r.peek()
+			ch, err := r.Peek()
 			if err != nil {
 				return err
 			}
@@ -192,7 +192,7 @@ func (r *benReader) skipAny() error {
 	case 'd':
 		_, _ = r.readByte()
 		for {
-			ch, err := r.peek()
+			ch, err := r.Peek()
 			if err != nil {
 				return err
 			}
@@ -234,8 +234,8 @@ type metaTop struct {
 	piecesRaw    []byte
 }
 
-func decodeTorrent(b []byte) (*metaTop, error) {
-	r := newReader(b)
+func DecodeTorrent(b []byte) (*metaTop, error) {
+	r := NewReader(b)
 	// top-level must be dict
 	if err := r.expectByte('d'); err != nil {
 		return nil, err
@@ -243,7 +243,7 @@ func decodeTorrent(b []byte) (*metaTop, error) {
 
 	var mt metaTop
 	for {
-		ch, err := r.peek()
+		ch, err := r.Peek()
 		if err != nil {
 			return nil, err
 		}
@@ -269,7 +269,7 @@ func decodeTorrent(b []byte) (*metaTop, error) {
 			mt.announce = string(v)
 
 		case "announce-list":
-			al, err := readStringListOfLists(r)
+			al, err := ReadStringListOfLists(r)
 			if err != nil {
 				return nil, fmt.Errorf("announce-list: %w", err)
 			}
@@ -312,9 +312,9 @@ func decodeTorrent(b []byte) (*metaTop, error) {
 			}
 			end := r.pos
 
-			// decode the info dict by re-parsing this span
-			sub := newReader(b[start:end])
-			info, piecesRaw, err := decodeInfo(sub)
+			// Decode the info dict by re-parsing this span
+			sub := NewReader(b[start:end])
+			info, piecesRaw, err := DecodeInfo(sub)
 			if err != nil {
 				return nil, err
 			}
@@ -334,13 +334,13 @@ func decodeTorrent(b []byte) (*metaTop, error) {
 	return &mt, nil
 }
 
-func readStringListOfLists(r *benReader) ([][]string, error) {
+func ReadStringListOfLists(r *benReader) ([][]string, error) {
 	if err := r.expectByte('l'); err != nil {
 		return nil, err
 	}
 	var out [][]string
 	for {
-		ch, err := r.peek()
+		ch, err := r.Peek()
 		if err != nil {
 			return nil, err
 		}
@@ -354,7 +354,7 @@ func readStringListOfLists(r *benReader) ([][]string, error) {
 		}
 		var inner []string
 		for {
-			ch, err := r.peek()
+			ch, err := r.Peek()
 			if err != nil {
 				return nil, err
 			}
@@ -373,7 +373,7 @@ func readStringListOfLists(r *benReader) ([][]string, error) {
 	return out, nil
 }
 
-func decodeInfo(r *benReader) (InfoDict, []byte, error) {
+func DecodeInfo(r *benReader) (InfoDict, []byte, error) {
 	var info InfoDict
 	var piecesRaw []byte
 	if err := r.expectByte('d'); err != nil {
@@ -381,7 +381,7 @@ func decodeInfo(r *benReader) (InfoDict, []byte, error) {
 	}
 
 	for {
-		ch, err := r.peek()
+		ch, err := r.Peek()
 		if err != nil {
 			return info, nil, err
 		}
@@ -427,7 +427,7 @@ func decodeInfo(r *benReader) (InfoDict, []byte, error) {
 			info.Length = &iv
 
 		case "files":
-			files, err := decodeInfoFiles(r)
+			files, err := DecodeInfoFiles(r)
 			if err != nil {
 				return info, nil, err
 			}
@@ -449,13 +449,13 @@ func decodeInfo(r *benReader) (InfoDict, []byte, error) {
 	return info, piecesRaw, nil
 }
 
-func decodeInfoFiles(r *benReader) ([]InfoFile, error) {
+func DecodeInfoFiles(r *benReader) ([]InfoFile, error) {
 	if err := r.expectByte('l'); err != nil {
 		return nil, err
 	}
 	var out []InfoFile
 	for {
-		ch, err := r.peek()
+		ch, err := r.Peek()
 		if err != nil {
 			return nil, err
 		}
@@ -468,7 +468,7 @@ func decodeInfoFiles(r *benReader) ([]InfoFile, error) {
 		}
 		var f InfoFile
 		for {
-			ch, err := r.peek()
+			ch, err := r.Peek()
 			if err != nil {
 				return nil, err
 			}
@@ -489,7 +489,7 @@ func decodeInfoFiles(r *benReader) ([]InfoFile, error) {
 				}
 				f.Length = iv
 			case "path":
-				paths, err := readStringList(r)
+				paths, err := ReadStringList(r)
 				if err != nil {
 					return nil, err
 				}
@@ -505,13 +505,13 @@ func decodeInfoFiles(r *benReader) ([]InfoFile, error) {
 	return out, nil
 }
 
-func readStringList(r *benReader) ([]string, error) {
+func ReadStringList(r *benReader) ([]string, error) {
 	if err := r.expectByte('l'); err != nil {
 		return nil, err
 	}
 	var out []string
 	for {
-		ch, err := r.peek()
+		ch, err := r.Peek()
 		if err != nil {
 			return nil, err
 		}
@@ -532,8 +532,8 @@ func readStringList(r *benReader) ([]string, error) {
 // Assembly / helpers
 // -----------------------------
 
-func assembleTorrent(b []byte) (*Torrent, error) {
-	mt, err := decodeTorrent(b)
+func AssembleTorrent(b []byte) (*Torrent, error) {
+	mt, err := DecodeTorrent(b)
 	if err != nil {
 		return nil, err
 	}
@@ -590,7 +590,7 @@ func assembleTorrent(b []byte) (*Torrent, error) {
 	}
 	infoHashHex := hex.EncodeToString(h[:])
 	infoHashB32 := strings.TrimRight(base32.StdEncoding.EncodeToString(h[:]), "=")
-	magnet := buildMagnet(h[:], announceList)
+	magnet := BuildMagnet(h[:], announceList)
 
 	return &Torrent{
 		Announce:     mt.announce,
@@ -609,7 +609,7 @@ func assembleTorrent(b []byte) (*Torrent, error) {
 	}, nil
 }
 
-func buildMagnet(infoHash []byte, announceList [][]string) string {
+func BuildMagnet(infoHash []byte, announceList [][]string) string {
 	xt := "urn:btih:" + strings.TrimRight(base32.StdEncoding.EncodeToString(infoHash), "=")
 	var parts []string
 	parts = append(parts, "xt="+xt)
@@ -622,7 +622,7 @@ func buildMagnet(infoHash []byte, announceList [][]string) string {
 				continue
 			}
 			seen[tr] = struct{}{}
-			parts = append(parts, "tr="+escapeMagnet(tr))
+			parts = append(parts, "tr="+EscapeMagnet(tr))
 			count++
 			if count >= 8 {
 				break
@@ -635,7 +635,7 @@ func buildMagnet(infoHash []byte, announceList [][]string) string {
 	return "magnet:?" + strings.Join(parts, "&")
 }
 
-func escapeMagnet(s string) string {
+func EscapeMagnet(s string) string {
 	// very small percent-encoder for trackers in magnets
 	replacer := strings.NewReplacer(
 		"%", "%25",
@@ -653,65 +653,65 @@ func escapeMagnet(s string) string {
 // CLI
 // -----------------------------
 
-// func main() {
-// 	var outJSON bool
-// 	flag.BoolVar(&outJSON, "json", true, "print JSON summary (default true)")
-// 	flag.Parse()
-// 	if flag.NArg() < 1 {
-// 		fmt.Fprintln(os.Stderr, "usage: torrentparse [--json] file.torrent")
-// 		os.Exit(2)
-// 	}
+func CLI() {
+	var outJSON bool
+	flag.BoolVar(&outJSON, "json", true, "print JSON summary (default true)")
+	flag.Parse()
+	if flag.NArg() < 1 {
+		fmt.Fprintln(os.Stderr, "usage: torrentparse [--json] file.torrent")
+		os.Exit(2)
+	}
 
-// 	path := flag.Arg(0)
-// 	data, err := os.ReadFile(path)
-// 	if err != nil {
-// 		fmt.Fprintln(os.Stderr, "read:", err)
-// 		os.Exit(1)
-// 	}
+	path := flag.Arg(0)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "read:", err)
+		os.Exit(1)
+	}
 
-// 	t, err := assembleTorrent(data)
-// 	if err != nil {
-// 		fmt.Fprintln(os.Stderr, "parse:", err)
-// 		os.Exit(1)
-// 	}
-// 	if outJSON {
-// 		enc := json.NewEncoder(os.Stdout)
-// 		enc.SetIndent("", "  ")
-// 		if err := enc.Encode(t); err != nil {
-// 			fmt.Fprintln(os.Stderr, err)
-// 			os.Exit(1)
-// 		}
-// 		return
-// 	}
-// 	// pretty print
-// 	fmt.Printf("Announce: %s\n", t.Announce)
-// 	if len(t.AnnounceList) > 0 {
-// 		fmt.Println("Trackers:")
-// 		for i, tier := range t.AnnounceList {
-// 			fmt.Printf("  Tier %d:\n", i+1)
-// 			for _, tr := range tier {
-// 				fmt.Printf("    %s\n", tr)
-// 			}
-// 		}
-// 	}
-// 	if t.CreationDate != nil {
-// 		fmt.Printf("Creation date: %s\n", t.CreationDate.Format(time.RFC3339))
-// 	}
-// 	if t.Comment != "" {
-// 		fmt.Printf("Comment: %s\n", t.Comment)
-// 	}
-// 	if t.CreatedBy != "" {
-// 		fmt.Printf("Created by: %s\n", t.CreatedBy)
-// 	}
-// 	fmt.Printf("Info hash (hex): %s\n", t.InfoHash)
-// 	fmt.Printf("Info hash (base32): %s\n", t.InfoHashB32)
-// 	fmt.Printf("Name: %s\n", t.Info.Name)
-// 	fmt.Printf("Piece length: %d\n", t.Info.PieceLength)
-// 	fmt.Printf("Private: %v\n", t.Info.Private)
-// 	fmt.Printf("Total length: %d bytes\n", t.TotalLength)
-// 	fmt.Printf("Files: %d\n", len(t.Files))
-// 	for _, f := range t.Files {
-// 		fmt.Printf("  %12d  %s\n", f.Length, f.Path)
-// 	}
-// 	fmt.Printf("Magnet: %s\n", t.Magnet)
-// }
+	t, err := AssembleTorrent(data)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "parse:", err)
+		os.Exit(1)
+	}
+	if outJSON {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(t); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+	// pretty print
+	fmt.Printf("Announce: %s\n", t.Announce)
+	if len(t.AnnounceList) > 0 {
+		fmt.Println("Trackers:")
+		for i, tier := range t.AnnounceList {
+			fmt.Printf("  Tier %d:\n", i+1)
+			for _, tr := range tier {
+				fmt.Printf("    %s\n", tr)
+			}
+		}
+	}
+	if t.CreationDate != nil {
+		fmt.Printf("Creation date: %s\n", t.CreationDate.Format(time.RFC3339))
+	}
+	if t.Comment != "" {
+		fmt.Printf("Comment: %s\n", t.Comment)
+	}
+	if t.CreatedBy != "" {
+		fmt.Printf("Created by: %s\n", t.CreatedBy)
+	}
+	fmt.Printf("Info hash (hex): %s\n", t.InfoHash)
+	fmt.Printf("Info hash (base32): %s\n", t.InfoHashB32)
+	fmt.Printf("Name: %s\n", t.Info.Name)
+	fmt.Printf("Piece length: %d\n", t.Info.PieceLength)
+	fmt.Printf("Private: %v\n", t.Info.Private)
+	fmt.Printf("Total length: %d bytes\n", t.TotalLength)
+	fmt.Printf("Files: %d\n", len(t.Files))
+	for _, f := range t.Files {
+		fmt.Printf("  %12d  %s\n", f.Length, f.Path)
+	}
+	fmt.Printf("Magnet: %s\n", t.Magnet)
+}
