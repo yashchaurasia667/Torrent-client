@@ -674,6 +674,7 @@ func CLI() {
 		fmt.Fprintln(os.Stderr, "parse:", err)
 		os.Exit(1)
 	}
+
 	if outJSON {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
