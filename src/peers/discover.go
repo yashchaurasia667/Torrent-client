@@ -9,7 +9,9 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 	"torrent-client/parser"
 )
 
@@ -54,9 +56,14 @@ func GeneratePeerId() string {
 }
 
 func UdpRequest(url string) {
+	// Remove the udp:// part
 	u := strings.Split(url, "://")[1]
-	fmt.Println(u)
-	addr, err := net.ResolveUDPAddr("udp", u)
+
+	// Seperate the host:port part from the complete url
+	trakerAddr := strings.Split(u, "/")[0]
+	// fmt.Println(trakerAddr)
+
+	addr, err := net.ResolveUDPAddr("udp", trakerAddr)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Error resolving UDP address: ", err)
 		os.Exit(1)
@@ -92,37 +99,35 @@ func RequestTracker(path string) {
 		os.Exit(1)
 	}
 
-	fmt.Println(t.Announce)
 	u, err := url.Parse(t.Announce)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Error while parsing URL: ", err)
 		os.Exit(1)
 	}
 
+	connection.peerId = GeneratePeerId()
+	rawHash, err := hex.DecodeString(t.InfoHash)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Invalid infohash:", err)
+		os.Exit(1)
+	}
+
 	if strings.HasPrefix(u.Scheme, "http") {
+		// fmt.Println("Url encoded info hash: ", urlEncode(rawHash))
 
-		connection.peerId = GeneratePeerId()
-		// fmt.Println("peer id len ", len(connection.peerId))
-
-		rawHash, err := hex.DecodeString(t.InfoHash)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "Invalid infohash:", err)
-			os.Exit(1)
+		q := url.Values{
+			"info_hash":  []string{string(rawHash[:])},
+			"peer_id":    []string{connection.peerId[:]},
+			"port":       []string{strconv.Itoa(PORT)},
+			"uploaded":   []string{"0"},
+			"downloaded": []string{"0"},
+			"left":       []string{strconv.Itoa(int(t.TotalLength))},
+			"conpact":    []string{"1"},
 		}
-
-		// fmt.Println("Raw info hash: ", len(t.InfoHash))
-
-		q := u.Query()
-		q.Add("info_hash", percentEncode(rawHash))
-		q.Add("peer_id", percentEncode([]byte(connection.peerId)))
-		q.Add("port", fmt.Sprintf("%d", PORT))
-		q.Add("uploaded", "0")
-		q.Add("downloaded", "0")
-		q.Add("left", fmt.Sprintf("%d", t.TotalLength))
-		// q.Add("compact", "1")
 		u.RawQuery = q.Encode()
 
-		res, err := http.Get(u.String())
+		client := http.Client{Timeout: 15 * time.Second}
+		res, err := client.Get(u.String())
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Error making request to the Tracker: ", err)
 			os.Exit(1)
@@ -144,7 +149,7 @@ func RequestTracker(path string) {
 		}
 		fmt.Println("Response body:", string(body))
 	} else if u.Scheme == "udp" {
-		fmt.Println("This is a UDP tracker you need to implement UDP protocol.")
+		fmt.Println("This is a UDP tracker using the UDP Request method")
 	} else {
 		fmt.Println("This is an unknown protocol", u.Scheme)
 	}
@@ -152,6 +157,7 @@ func RequestTracker(path string) {
 }
 
 func main() {
+	// UdpRequest("udp://tracker.opentrackr.org:1337/announce")
 	RequestTracker("../test_files/debian-installer.torrent")
 	// UdpRequest("http://bttracker.debian.org:6969/announce")
 }
