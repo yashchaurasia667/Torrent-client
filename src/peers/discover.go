@@ -170,6 +170,7 @@ func RequestTracker(path string) {
 			fmt.Fprintln(os.Stderr, "Error while making Request to the tracker: ", err)
 			os.Exit(1)
 		}
+		// res, err := parser.DecodeResponse()
 
 		fmt.Println("Response body:", string(body))
 	} else if u.Scheme == "udp" {
@@ -186,4 +187,13 @@ func main() {
 	// UdpRequest("udp://tracker.opentrackr.org:1337/announce")
 	RequestTracker("../test_files/debian-installer.torrent")
 	// UdpRequest("http://bttracker.debian.org:6969/announce")
+
+	// DEBUG
+	// meta, err := parser.Test("../test_files/debian-installer.torrent")
+	// if err != nil {
+	// 	fmt.Fprintln(os.Stderr, err)
+	// 	os.Exit(1)
+	// }
+
+	// fmt.Println(meta.Announce)
 }
