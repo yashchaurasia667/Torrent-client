@@ -2,186 +2,179 @@ package parser
 
 import (
 	"crypto/sha1"
-	"encoding/base32"
-	"encoding/hex"
-	"encoding/json"
-	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
-	"sort"
-	"strings"
 	"time"
 )
 
-// -----------------------------
-// Public data structures
-// -----------------------------
-
 type Torrent struct {
-	Announce     string        `json:"announce,omitempty"`
-	AnnounceList [][]string    `json:"announceList,omitempty"`
-	CreationDate *time.Time    `json:"creationDate,omitempty"`
-	Comment      string        `json:"comment,omitempty"`
-	CreatedBy    string        `json:"createdBy,omitempty"`
-	Encoding     string        `json:"encoding,omitempty"`
-	Info         InfoDict      `json:"info"`
-	InfoHash     string        `json:"infoHashHex"` // hex, lower-case
-	InfoHashB32  string        `json:"infoHashBase32"`
-	PieceHashes  []string      `json:"pieceHashesHex"`
-	TotalLength  int64         `json:"totalLength"`
-	Files        []TorrentFile `json:"files"`
-	Magnet       string        `json:"magnet"`
-}
-
-type TorrentFile struct {
-	Length int64  `json:"length"`
-	Path   string `json:"path"`
+	Announce     string
+	AnnounceList []string
+	CreatedBy    string
+	CreationDate *time.Time
+	Comment      string
+	Encoding     string
+	Info         InfoDict
+	InfoHash     []byte
+	TotalLength  int64
+	Magnet       string
 }
 
 type InfoDict struct {
-	Name        string `json:"name"`
-	PieceLength int64  `json:"pieceLength"`
-	Private     bool   `json:"private"`
-	// Single-file mode:
-	Length *int64 `json:"length,omitempty"`
-	// Multi-file mode:
-	Files []InfoFile `json:"files,omitempty"`
+	Name        string
+	Length      int64
+	PieceLength int64
+	Pieces      []byte
+	PieceHashes [][]byte
+	PieceCount  int
+	Private     bool
+	Files       []InfoFile
 }
 
 type InfoFile struct {
-	Length int64    `json:"length"`
-	Path   []string `json:"path"`
+	Length int64
+	Path   []string
 }
 
-// -----------------------------
-// Minimal bencode reader
-// -----------------------------
-
-type benReader struct {
+type Reader struct {
 	b   []byte
 	pos int
 }
 
-func NewReader(b []byte) *benReader { return &benReader{b: b} }
+func newReader(b []byte) *Reader {
+	return &Reader{b: b}
+}
 
-func (r *benReader) Peek() (byte, error) {
+// READER UTIL FUNCTION
+
+func (r *Reader) readByte() (byte, error) {
 	if r.pos >= len(r.b) {
+		return 0, io.ErrUnexpectedEOF
+	}
+	r.pos++
+	return r.b[r.pos-1], nil
+}
+
+func (r *Reader) expectByte(b byte) error {
+	ch, err := r.readByte()
+	if err != nil {
+		return err
+	}
+
+	if ch != b {
+		return fmt.Errorf("bencode expected %c got %c at %d", b, ch, r.pos-1)
+	}
+	return nil
+}
+
+func (r *Reader) peek() (byte, error) {
+	if r.pos > len(r.b) {
 		return 0, io.ErrUnexpectedEOF
 	}
 	return r.b[r.pos], nil
 }
 
-func (r *benReader) readByte() (byte, error) {
-	if r.pos >= len(r.b) {
-		return 0, io.ErrUnexpectedEOF
+func (r *Reader) readString() (string, error) {
+	len := 0
+
+	for {
+		ch, err := r.readByte()
+		if err != nil {
+			return "", err
+		}
+
+		n := ch - '0'
+		if n <= 9 {
+			len = len*10 + int(n)
+		} else if ch == ':' {
+			break
+		} else {
+			return "", fmt.Errorf("invalid formatting for bencoded string")
+		}
 	}
-	ch := r.b[r.pos]
-	r.pos++
-	return ch, nil
+
+	r.pos += len
+	return string(r.b[r.pos-len : r.pos]), nil
 }
 
-func (r *benReader) expectByte(want byte) error {
-	ch, err := r.readByte()
+func (r *Reader) readStringList() ([]string, error) {
+	err := r.expectByte('l')
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if ch != want {
-		return fmt.Errorf("bencode: expected '%c' got '%c' at %d", want, ch, r.pos-1)
+
+	elems := []string{}
+
+	for {
+		ch, err := r.peek()
+		if err != nil {
+			return nil, err
+		}
+
+		if ch == 'l' {
+			s, err := r.readStringList()
+			if err != nil {
+				return nil, err
+			}
+			elems = append(elems, s...)
+		} else if ch <= '9' {
+			s, err := r.readString()
+			if err != nil {
+				return nil, err
+			}
+			elems = append(elems, s)
+		} else if ch == 'e' {
+			r.readByte()
+			break
+		}
 	}
-	return nil
+
+	return elems, nil
 }
 
-func (r *benReader) readInt() (int64, error) {
-	// i<digits>e
-	if err := r.expectByte('i'); err != nil {
+func (r *Reader) readInt() (int64, error) {
+	err := r.expectByte('i')
+	if err != nil {
 		return 0, err
 	}
-	sign := int64(1)
-	if r.pos < len(r.b) && r.b[r.pos] == '-' {
-		sign = -1
-		r.pos++
-	}
-	if r.pos >= len(r.b) || r.b[r.pos] < '0' || r.b[r.pos] > '9' {
-		return 0, fmt.Errorf("bencode: invalid integer at %d", r.pos)
-	}
-	var n int64
+
+	var num int64 = 0
 	for {
-		if r.pos >= len(r.b) {
-			return 0, io.ErrUnexpectedEOF
+		ch, err := r.readByte()
+		if err != nil {
+			return 0, err
 		}
-		ch := r.b[r.pos]
+
+		// fmt.Println(ch)
 		if ch == 'e' {
-			r.pos++
-			break
-		}
-		if ch < '0' || ch > '9' {
-			return 0, fmt.Errorf("bencode: invalid digit at %d", r.pos)
-		}
-		n = n*10 + int64(ch-'0')
-		r.pos++
-	}
-	return sign * n, nil
-}
-
-func (r *benReader) readString() ([]byte, error) {
-	// <len>:<data>
-	if r.pos >= len(r.b) || r.b[r.pos] < '0' || r.b[r.pos] > '9' {
-		return nil, fmt.Errorf("bencode: expected string length at %d", r.pos)
-	}
-
-	var n int
-	for {
-		if r.pos >= len(r.b) {
-			return nil, io.ErrUnexpectedEOF
-		}
-
-		ch := r.b[r.pos]
-		if ch == ':' {
-			r.pos++
 			break
 		}
 
-		if ch < '0' || ch > '9' {
-			return nil, fmt.Errorf("bencode: invalid length at %d", r.pos)
-		}
-
-		n = n*10 + int(ch-'0')
-		r.pos++
+		num = num*10 + int64(ch-'0')
 	}
 
-	if r.pos+n > len(r.b) {
-		return nil, io.ErrUnexpectedEOF
-	}
-
-	data := r.b[r.pos : r.pos+n]
-	r.pos += n
-	return data, nil
+	return num, nil
 }
 
-// skipAny advances r.pos past the next value
-func (r *benReader) skipAny() error {
-	ch, err := r.Peek()
+func (r *Reader) skipAny() error {
+	ch, err := r.peek()
 	if err != nil {
 		return err
 	}
 
 	switch ch {
 	case 'i':
-		_, err := r.readInt()
-		return err
-
+		r.readInt()
 	case 'l':
-		_, _ = r.readByte() // 'l'
+		r.readByte()
 		for {
-			ch, err := r.Peek()
+			ch, err := r.peek()
 			if err != nil {
 				return err
 			}
 			if ch == 'e' {
-				_, _ = r.readByte()
+				r.readByte()
 				return nil
 			}
 			if err := r.skipAny(); err != nil {
@@ -190,14 +183,14 @@ func (r *benReader) skipAny() error {
 		}
 
 	case 'd':
-		_, _ = r.readByte()
+		r.readByte()
 		for {
-			ch, err := r.Peek()
+			ch, err := r.peek()
 			if err != nil {
 				return err
 			}
 			if ch == 'e' {
-				_, _ = r.readByte()
+				r.readByte()
 				return nil
 			}
 			// key
@@ -210,509 +203,318 @@ func (r *benReader) skipAny() error {
 			}
 		}
 	default:
-		// string
 		_, err := r.readString()
 		return err
 	}
+
+	return nil
 }
 
-// -----------------------------
-// Decoding specific torrent fields while preserving raw span of info dict
-// -----------------------------
-
-type span struct{ start, end int }
-
-type metaTop struct {
-	announce     string
-	announceList [][]string
-	creationDate *time.Time
-	comment      string
-	createdBy    string
-	encoding     string
-	info         InfoDict
-	infoSpan     span // raw bytes covering the bencoded info dictionary
-	piecesRaw    []byte
-}
-
-func DecodeTorrent(b []byte) (*metaTop, error) {
-	r := NewReader(b)
-	// top-level must be dict
-	if err := r.expectByte('d'); err != nil {
+func (r *Reader) readInfoFile() (*InfoFile, error) {
+	err := r.expectByte('d')
+	if err != nil {
 		return nil, err
 	}
 
-	var mt metaTop
+	var file InfoFile
 	for {
-		ch, err := r.Peek()
+		ch, err := r.peek()
 		if err != nil {
 			return nil, err
 		}
 
 		if ch == 'e' {
-			_, _ = r.readByte()
+			r.readByte()
 			break
 		}
 
-		keyb, err := r.readString()
-
+		key, err := r.readString()
 		if err != nil {
 			return nil, err
 		}
 
-		key := string(keyb)
 		switch key {
-		case "announce":
-			v, err := r.readString()
+		case "length":
+			i, err := r.readInt()
 			if err != nil {
 				return nil, err
 			}
-			mt.announce = string(v)
+			file.Length = i
 
-		case "announce-list":
-			al, err := ReadStringListOfLists(r)
-			if err != nil {
-				return nil, fmt.Errorf("announce-list: %w", err)
-			}
-			mt.announceList = al
-
-		case "creation date":
-			iv, err := r.readInt()
+		case "path":
+			elems, err := r.readStringList()
 			if err != nil {
 				return nil, err
 			}
-			t := time.Unix(iv, 0).UTC()
-			mt.creationDate = &t
-
-		case "comment":
-			v, err := r.readString()
-			if err != nil {
-				return nil, err
-			}
-			mt.comment = string(v)
-
-		case "created by":
-			v, err := r.readString()
-			if err != nil {
-				return nil, err
-			}
-			mt.createdBy = string(v)
-
-		case "encoding":
-			v, err := r.readString()
-			if err != nil {
-				return nil, err
-			}
-			mt.encoding = string(v)
-
-		case "info":
-			// capture raw span exactly as encoded
-			start := r.pos
-			if err := r.skipAny(); err != nil {
-				return nil, err
-			}
-			end := r.pos
-
-			// Decode the info dict by re-parsing this span
-			sub := NewReader(b[start:end])
-			info, piecesRaw, err := DecodeInfo(sub)
-			if err != nil {
-				return nil, err
-			}
-
-			mt.info = info
-			mt.infoSpan = span{start, end}
-			mt.piecesRaw = piecesRaw
+			file.Path = elems[:]
 
 		default:
-			// unknown key: skip value
-			if err := r.skipAny(); err != nil {
-				return nil, err
-			}
+			r.skipAny()
 		}
 	}
 
-	return &mt, nil
+	return &file, err
 }
 
-func ReadStringListOfLists(r *benReader) ([][]string, error) {
-	if err := r.expectByte('l'); err != nil {
+func (r *Reader) readInfoFilesList() ([]InfoFile, error) {
+	err := r.expectByte('l')
+	if err != nil {
 		return nil, err
 	}
-	var out [][]string
+
+	var files []InfoFile
 	for {
-		ch, err := r.Peek()
+		ch, err := r.peek()
 		if err != nil {
 			return nil, err
 		}
+
 		if ch == 'e' {
-			_, _ = r.readByte()
+			r.readByte()
 			break
 		}
-		// inner list
-		if err := r.expectByte('l'); err != nil {
+
+		f, err := r.readInfoFile()
+		if err != nil {
 			return nil, err
 		}
-		var inner []string
-		for {
-			ch, err := r.Peek()
-			if err != nil {
-				return nil, err
-			}
-			if ch == 'e' {
-				_, _ = r.readByte()
-				break
-			}
-			v, err := r.readString()
-			if err != nil {
-				return nil, err
-			}
-			inner = append(inner, string(v))
-		}
-		out = append(out, inner)
+		files = append(files, *f)
 	}
-	return out, nil
+	return files, nil
 }
 
-func DecodeInfo(r *benReader) (InfoDict, []byte, error) {
-	var info InfoDict
-	var piecesRaw []byte
-	if err := r.expectByte('d'); err != nil {
-		return info, nil, err
+func GetSha1Hash(b []byte) []byte {
+	sha := sha1.New()
+	sha.Write(b)
+	rawHash := sha.Sum(nil)
+	return rawHash
+}
+
+func (r *Reader) readInfo() (*InfoDict, error) {
+	err := r.expectByte('d')
+	if err != nil {
+		return nil, err
 	}
 
+	var info InfoDict
+
 	for {
-		ch, err := r.Peek()
+		ch, err := r.peek()
 		if err != nil {
-			return info, nil, err
+			return nil, err
 		}
 
 		if ch == 'e' {
-			_, _ = r.readByte()
+			r.readByte()
 			break
 		}
 
-		keyb, err := r.readString()
+		key, err := r.readString()
 		if err != nil {
-			return info, nil, err
+			return nil, err
 		}
 
-		key := string(keyb)
 		switch key {
 		case "name":
-			v, err := r.readString()
+			s, err := r.readString()
 			if err != nil {
-				return info, nil, err
+				return nil, err
 			}
-			info.Name = string(v)
-
-		case "piece length":
-			iv, err := r.readInt()
-			if err != nil {
-				return info, nil, err
-			}
-			info.PieceLength = iv
-
-		case "private":
-			iv, err := r.readInt()
-			if err != nil {
-				return info, nil, err
-			}
-			info.Private = (iv != 0)
+			// DEBUG
+			// fmt.Println("name ", s)
+			info.Name = s
 
 		case "length":
-			iv, err := r.readInt()
+			i, err := r.readInt()
 			if err != nil {
-				return info, nil, err
+				return nil, err
 			}
-			info.Length = &iv
+			// DEBUG
+			// fmt.Println("length ", i)
+			info.Length = i
 
-		case "files":
-			files, err := DecodeInfoFiles(r)
+		case "piece length":
+			i, err := r.readInt()
 			if err != nil {
-				return info, nil, err
+				return nil, err
 			}
-			info.Files = files
+			// DEBUG
+			// fmt.Println("piece length ", i)
+			info.PieceLength = i
 
 		case "pieces":
-			v, err := r.readString()
-			if err != nil {
-				return info, nil, err
-			}
-			piecesRaw = append([]byte(nil), v...) // copy
-
-		default:
-			if err := r.skipAny(); err != nil {
-				return info, nil, err
-			}
-		}
-	}
-	return info, piecesRaw, nil
-}
-
-func DecodeInfoFiles(r *benReader) ([]InfoFile, error) {
-	if err := r.expectByte('l'); err != nil {
-		return nil, err
-	}
-	var out []InfoFile
-	for {
-		ch, err := r.Peek()
-		if err != nil {
-			return nil, err
-		}
-		if ch == 'e' {
-			_, _ = r.readByte()
-			break
-		}
-		if err := r.expectByte('d'); err != nil {
-			return nil, err
-		}
-		var f InfoFile
-		for {
-			ch, err := r.Peek()
-			if err != nil {
-				return nil, err
-			}
-			if ch == 'e' {
-				_, _ = r.readByte()
-				break
-			}
-			keyb, err := r.readString()
-			if err != nil {
-				return nil, err
-			}
-			key := string(keyb)
-			switch key {
-			case "length":
-				iv, err := r.readInt()
+			var piecesLen int64 = 0
+			for {
+				ch, err := r.readByte()
 				if err != nil {
 					return nil, err
 				}
-				f.Length = iv
-			case "path":
-				paths, err := ReadStringList(r)
-				if err != nil {
-					return nil, err
-				}
-				f.Path = paths
-			default:
-				if err := r.skipAny(); err != nil {
-					return nil, err
-				}
-			}
-		}
-		out = append(out, f)
-	}
-	return out, nil
-}
 
-func ReadStringList(r *benReader) ([]string, error) {
-	if err := r.expectByte('l'); err != nil {
-		return nil, err
-	}
-	var out []string
-	for {
-		ch, err := r.Peek()
-		if err != nil {
-			return nil, err
-		}
-		if ch == 'e' {
-			_, _ = r.readByte()
-			break
-		}
-		v, err := r.readString()
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, string(v))
-	}
-	return out, nil
-}
-
-// -----------------------------
-// Assembly / helpers
-// -----------------------------
-
-func AssembleTorrent(b []byte) (*Torrent, error) {
-	mt, err := DecodeTorrent(b)
-	if err != nil {
-		return nil, err
-	}
-
-	if mt.infoSpan.start <= 0 || mt.infoSpan.end <= mt.infoSpan.start || mt.infoSpan.end > len(b) {
-		return nil, errors.New("invalid info dictionary span")
-	}
-
-	// info-hash (exact raw bytes of info dict)
-	h := sha1.Sum(b[mt.infoSpan.start:mt.infoSpan.end])
-
-	// pieces parsing
-	if len(mt.piecesRaw) == 0 || len(mt.piecesRaw)%20 != 0 {
-		return nil, fmt.Errorf("invalid pieces field length: %d", len(mt.piecesRaw))
-	}
-
-	pieceCount := len(mt.piecesRaw) / 20
-	pieceHashes := make([]string, 0, pieceCount)
-	for i := range pieceCount {
-		pieceHashes = append(pieceHashes, hex.EncodeToString(mt.piecesRaw[i*20:(i+1)*20]))
-	}
-
-	// files + total length
-	var files []TorrentFile
-	var total int64
-	if mt.info.Length != nil {
-		// single-file
-		files = []TorrentFile{{Length: *mt.info.Length, Path: mt.info.Name}}
-		total = *mt.info.Length
-	} else {
-		for _, f := range mt.info.Files {
-			p := filepath.ToSlash(filepath.Join(append([]string{mt.info.Name}, f.Path...)...))
-			files = append(files, TorrentFile{Length: f.Length, Path: p})
-			total += f.Length
-		}
-		// deterministic order for output
-		sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
-	}
-	announceList := mt.announceList
-	if mt.announce != "" {
-		// ensure primary announce is first entry if not already present
-		found := false
-		for _, tier := range announceList {
-			for _, tr := range tier {
-				if tr == mt.announce {
-					found = true
+				if ch == ':' {
 					break
 				}
+
+				if ch > '9' {
+					return nil, fmt.Errorf("invalid format for pieces in info dict")
+				}
+
+				piecesLen = piecesLen*10 + int64(ch-'0')
 			}
-		}
-		if !found {
-			announceList = append([][]string{{mt.announce}}, announceList...)
+			info.Pieces = r.b[r.pos : r.pos+int(piecesLen)]
+			r.pos += int(piecesLen)
+
+			// CALCULATE PIECE HASHES
+			info.PieceCount = int(piecesLen / 20)
+
+			// DEBUG
+			// fmt.Println("piece length ", info.PieceLength)
+			// fmt.Println("piece count ", info.PieceCount)
+
+			pieceHashes := make([][]byte, info.PieceCount)
+			for i := range info.PieceCount {
+				start := i * 20
+				end := start + 20
+
+				if end >= int(piecesLen) {
+					end = int(piecesLen) - 1
+				}
+
+				hash := GetSha1Hash(info.Pieces[start:end])
+				pieceHashes[i] = hash
+			}
+			info.PieceHashes = pieceHashes
+			// fmt.Println(pieceHashes)
+
+		case "private":
+			i, err := r.readInt()
+			if err != nil {
+				return nil, err
+			}
+			// DEBUG
+			// fmt.Println("private ", i)
+			info.Private = (i != 0)
+
+		case "files":
+			files, err := r.readInfoFilesList()
+			if err != nil {
+				return nil, err
+			}
+			// DEBUG
+			// fmt.Println("files ", files)
+			info.Files = files
+
+		default:
+			r.skipAny()
 		}
 	}
-	infoHashHex := hex.EncodeToString(h[:])
-	infoHashB32 := strings.TrimRight(base32.StdEncoding.EncodeToString(h[:]), "=")
-	magnet := BuildMagnet(h[:], announceList)
 
-	return &Torrent{
-		Announce:     mt.announce,
-		AnnounceList: announceList,
-		CreationDate: mt.creationDate,
-		Comment:      mt.comment,
-		CreatedBy:    mt.createdBy,
-		Encoding:     mt.encoding,
-		Info:         mt.info,
-		InfoHash:     infoHashHex,
-		InfoHashB32:  infoHashB32,
-		PieceHashes:  pieceHashes,
-		TotalLength:  total,
-		Files:        files,
-		Magnet:       magnet,
-	}, nil
+	return &info, nil
 }
 
-func BuildMagnet(infoHash []byte, announceList [][]string) string {
-	xt := "urn:btih:" + strings.TrimRight(base32.StdEncoding.EncodeToString(infoHash), "=")
-	var parts []string
-	parts = append(parts, "xt="+xt)
-	// include a few top trackers (dedup)
-	seen := map[string]struct{}{}
-	count := 0
-	for _, tier := range announceList {
-		for _, tr := range tier {
-			if _, ok := seen[tr]; ok {
-				continue
-			}
-			seen[tr] = struct{}{}
-			parts = append(parts, "tr="+EscapeMagnet(tr))
-			count++
-			if count >= 8 {
-				break
-			}
+// TORRENT FUNCTIONS
+
+func AssembleTorrent(b []byte) (*Torrent, error) {
+	meta, err := DecodeTorrent(b)
+	if err != nil {
+		return nil, err
+	}
+
+	return meta, nil
+}
+
+func DecodeTorrent(data []byte) (*Torrent, error) {
+	r := newReader(data)
+	err := r.expectByte('d')
+	if err != nil {
+		return nil, err
+	}
+
+	var meta Torrent
+
+	for {
+		ch, err := r.peek()
+		if err != nil {
+			return nil, err
 		}
-		if count >= 8 {
+
+		if ch == 'e' {
+			r.readByte()
 			break
 		}
-	}
-	return "magnet:?" + strings.Join(parts, "&")
-}
 
-func EscapeMagnet(s string) string {
-	// very small percent-encoder for trackers in magnets
-	replacer := strings.NewReplacer(
-		"%", "%25",
-		" ", "%20",
-		"\"", "%22",
-		"<", "%3C",
-		">", "%3E",
-		"#", "%23",
-		"|", "%7C",
-	)
-	return replacer.Replace(s)
-}
-
-// -----------------------------
-// CLI
-// -----------------------------
-
-func CLI() {
-	var outJSON bool
-	flag.BoolVar(&outJSON, "json", true, "print JSON summary (default true)")
-	flag.Parse()
-	if flag.NArg() < 1 {
-		fmt.Fprintln(os.Stderr, "usage: torrentparse [--json] file.torrent")
-		os.Exit(2)
-	}
-
-	path := flag.Arg(0)
-	data, err := os.ReadFile(path)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "read:", err)
-		os.Exit(1)
-	}
-
-	t, err := AssembleTorrent(data)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "parse:", err)
-		os.Exit(1)
-	}
-
-	if outJSON {
-		enc := json.NewEncoder(os.Stdout)
-		enc.SetIndent("", "  ")
-		if err := enc.Encode(t); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+		key, err := r.readString()
+		if err != nil {
+			return nil, err
 		}
-		return
-	}
-	// pretty print
-	fmt.Printf("Announce: %s\n", t.Announce)
-	if len(t.AnnounceList) > 0 {
-		fmt.Println("Trackers:")
-		for i, tier := range t.AnnounceList {
-			fmt.Printf("  Tier %d:\n", i+1)
-			for _, tr := range tier {
-				fmt.Printf("    %s\n", tr)
+
+		switch key {
+		case "annouce":
+			s, err := r.readString()
+			if err != nil {
+				return nil, err
 			}
+			meta.Announce = s
+
+		case "announce-list":
+			elems, err := r.readStringList()
+			if err != nil {
+				return nil, err
+			}
+			meta.AnnounceList = elems
+
+		case "created by":
+			s, err := r.readString()
+			if err != nil {
+				return nil, err
+			}
+			meta.CreatedBy = s
+
+		case "creation date":
+			i, err := r.readInt()
+			if err != nil {
+				return nil, err
+			}
+			t := time.Unix(i, 0).UTC()
+			meta.CreationDate = &t
+
+		case "encoding":
+			s, err := r.readString()
+			if err != nil {
+				return nil, err
+			}
+			meta.Encoding = s
+
+		case "info":
+			infoStart := r.pos
+			info, err := r.readInfo()
+			if err != nil {
+				return nil, err
+			}
+			infoEnd := r.pos
+			meta.Info = *info
+			meta.InfoHash = GetSha1Hash(r.b[infoStart:infoEnd])
+			// DEBUG
+			// fmt.Println("info hash: ", meta.InfoHash)
+
+		default:
+			r.skipAny()
 		}
+
+		meta.TotalLength = meta.Info.Length
 	}
-	if t.CreationDate != nil {
-		fmt.Printf("Creation date: %s\n", t.CreationDate.Format(time.RFC3339))
+
+	return &meta, nil
+}
+
+func Test() {
+	data, err := os.ReadFile("./test_files/single_file.torrent")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Failed to open file ", err)
 	}
-	if t.Comment != "" {
-		fmt.Printf("Comment: %s\n", t.Comment)
+
+	_, err = DecodeTorrent(data)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Error while decoding torrent file: ", err)
+		os.Exit(1)
 	}
-	if t.CreatedBy != "" {
-		fmt.Printf("Created by: %s\n", t.CreatedBy)
-	}
-	fmt.Printf("Info hash (hex): %s\n", t.InfoHash)
-	fmt.Printf("Info hash (base32): %s\n", t.InfoHashB32)
-	fmt.Printf("Name: %s\n", t.Info.Name)
-	fmt.Printf("Piece length: %d\n", t.Info.PieceLength)
-	fmt.Printf("Private: %v\n", t.Info.Private)
-	fmt.Printf("Total length: %d bytes\n", t.TotalLength)
-	fmt.Printf("Files: %d\n", len(t.Files))
-	for _, f := range t.Files {
-		fmt.Printf("  %12d  %s\n", f.Length, f.Path)
-	}
-	fmt.Printf("Magnet: %s\n", t.Magnet)
 }
