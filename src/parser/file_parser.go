@@ -419,6 +419,9 @@ func AssembleTorrent(b []byte) (*Torrent, error) {
 		return nil, err
 	}
 
+	// DEBUG
+	// fmt.Println(meta.Announce)
+
 	return meta, nil
 }
 
@@ -448,19 +451,29 @@ func DecodeTorrent(data []byte) (*Torrent, error) {
 		}
 
 		switch key {
-		case "annouce":
+		case "announce":
 			s, err := r.readString()
 			if err != nil {
 				return nil, err
 			}
 			meta.Announce = s
+			// fmt.Println("hello announce")
 
 		case "announce-list":
 			elems, err := r.readStringList()
 			if err != nil {
 				return nil, err
 			}
+			fmt.Println("hello announce list")
 			meta.AnnounceList = elems
+
+		case "comment":
+			s, err := r.readString()
+			if err != nil {
+				return nil, err
+			}
+			meta.Comment = s
+			// fmt.Println("hello comment")
 
 		case "created by":
 			s, err := r.readString()
@@ -468,6 +481,7 @@ func DecodeTorrent(data []byte) (*Torrent, error) {
 				return nil, err
 			}
 			meta.CreatedBy = s
+			// fmt.Println("hello creator")
 
 		case "creation date":
 			i, err := r.readInt()
@@ -476,6 +490,7 @@ func DecodeTorrent(data []byte) (*Torrent, error) {
 			}
 			t := time.Unix(i, 0).UTC()
 			meta.CreationDate = &t
+			// fmt.Println("hello date")
 
 		case "encoding":
 			s, err := r.readString()
@@ -483,6 +498,7 @@ func DecodeTorrent(data []byte) (*Torrent, error) {
 				return nil, err
 			}
 			meta.Encoding = s
+			fmt.Println("hello encoding")
 
 		case "info":
 			infoStart := r.pos
@@ -494,10 +510,12 @@ func DecodeTorrent(data []byte) (*Torrent, error) {
 			meta.Info = *info
 			meta.InfoHash = GetSha1Hash(r.b[infoStart:infoEnd])
 			// DEBUG
+			// fmt.Println("hello info")
 			// fmt.Println("info hash: ", meta.InfoHash)
 
 		default:
 			r.skipAny()
+			// fmt.Println("hello default")
 		}
 
 		meta.TotalLength = meta.Info.Length
@@ -506,15 +524,16 @@ func DecodeTorrent(data []byte) (*Torrent, error) {
 	return &meta, nil
 }
 
-func Test() {
-	data, err := os.ReadFile("./test_files/single_file.torrent")
+func Test(path string) (*Torrent, error) {
+	data, err := os.ReadFile(path)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to open file ", err)
+		// fmt.Fprintln(os.Stderr, "Failed to open file ", err)
+		return nil, err
 	}
 
-	_, err = DecodeTorrent(data)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "Error while decoding torrent file: ", err)
-		os.Exit(1)
-	}
+	return DecodeTorrent(data)
+	// if err != nil {
+	// 	fmt.Fprintln(os.Stderr, "Error while decoding torrent file: ", err)
+	// 	os.Exit(1)
+	// }
 }
