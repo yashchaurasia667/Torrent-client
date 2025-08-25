@@ -131,7 +131,7 @@ func HTTPRequest(url string) ([]byte, error) {
 	return body, nil
 }
 
-func RequestTracker(path string) {
+func RequestTracker(path string) (*parser.Response, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "read: ", err)
@@ -170,22 +170,34 @@ func RequestTracker(path string) {
 			fmt.Fprintln(os.Stderr, "Error while making Request to the tracker: ", err)
 			os.Exit(1)
 		}
-		// res, err := parser.DecodeResponse()
 
-		fmt.Println("Response body:", string(body))
+		r := parser.NewReader(body)
+		res, err := r.DecodeResponse()
+		if err != nil {
+			return nil, err
+		}
+		return res, nil
 	} else if u.Scheme == "udp" {
 		connection.connectionType = "udp"
 		fmt.Println("This is a UDP tracker using the UDP Request method")
+		return nil, nil
 	} else {
 		connection.connectionType = "unknown"
 		fmt.Println("This is an unknown protocol", u.Scheme)
+		return nil, nil
 	}
 
 }
 
 func main() {
 	// UdpRequest("udp://tracker.opentrackr.org:1337/announce")
-	RequestTracker("../test_files/debian-installer.torrent")
+	res, err := RequestTracker("../test_files/debian-installer.torrent")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+
+	fmt.Println(res)
 	// UdpRequest("http://bttracker.debian.org:6969/announce")
 
 	// DEBUG
