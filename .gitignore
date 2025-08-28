@@ -2,3 +2,4 @@ build
 bin
 .venv
 .parser-ai.go
+.vscode

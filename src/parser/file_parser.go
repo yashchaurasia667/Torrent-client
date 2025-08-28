@@ -42,7 +42,7 @@ type Reader struct {
 	pos int
 }
 
-func newReader(b []byte) *Reader {
+func NewReader(b []byte) *Reader {
 	return &Reader{b: b}
 }
 
@@ -426,7 +426,7 @@ func AssembleTorrent(b []byte) (*Torrent, error) {
 }
 
 func DecodeTorrent(data []byte) (*Torrent, error) {
-	r := newReader(data)
+	r := NewReader(data)
 	err := r.expectByte('d')
 	if err != nil {
 		return nil, err
@@ -464,8 +464,8 @@ func DecodeTorrent(data []byte) (*Torrent, error) {
 			if err != nil {
 				return nil, err
 			}
-			fmt.Println("hello announce list")
 			meta.AnnounceList = elems
+			// fmt.Println("hello announce list")
 
 		case "comment":
 			s, err := r.readString()
@@ -498,7 +498,7 @@ func DecodeTorrent(data []byte) (*Torrent, error) {
 				return nil, err
 			}
 			meta.Encoding = s
-			fmt.Println("hello encoding")
+			// fmt.Println("hello encoding")
 
 		case "info":
 			infoStart := r.pos

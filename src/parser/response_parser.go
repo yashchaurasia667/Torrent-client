@@ -3,12 +3,12 @@ package parser
 // d
 // 8:intervali900e
 // 5:peers
-	// l
-		// d
-			// 2:ip 14:31.216.102.126
-			// 4:port i16881e
-		// e
-	// e
+// l
+// d
+// 2:ip 14:31.216.102.126
+// 4:port i16881e
+// e
+// e
 // e
 
 type Response struct {
@@ -23,12 +23,12 @@ type Peer struct {
 
 func (r *Reader) decodePeer() (*Peer, error) {
 	var peer Peer
-	for {
-		err := r.expectByte('d')
-		if err != nil {
-			return nil, err
-		}
+	err := r.expectByte('d')
+	if err != nil {
+		return nil, err
+	}
 
+	for {
 		ch, err := r.peek()
 		if err != nil {
 			return nil, err
@@ -65,12 +65,12 @@ func (r *Reader) decodePeer() (*Peer, error) {
 func (r *Reader) decodePeers() ([]Peer, error) {
 	var p []Peer
 
-	for {
-		err := r.expectByte('l')
-		if err != nil {
-			return nil, err
-		}
+	err := r.expectByte('l')
+	if err != nil {
+		return nil, err
+	}
 
+	for {
 		ch, err := r.peek()
 		if err != nil {
 			return nil, err
@@ -92,15 +92,15 @@ func (r *Reader) decodePeers() ([]Peer, error) {
 	return p, nil
 }
 
-func (r *Reader) DecodeResponse(b []byte) (*Response, error) {
+func (r *Reader) DecodeResponse() (*Response, error) {
 	var res Response
 
-	for {
-		err := r.expectByte('d')
-		if err != nil {
-			return nil, err
-		}
+	err := r.expectByte('d')
+	if err != nil {
+		return nil, err
+	}
 
+	for {
 		ch, err := r.peek()
 		if err != nil {
 			return nil, err
@@ -125,7 +125,6 @@ func (r *Reader) DecodeResponse(b []byte) (*Response, error) {
 			res.Interval = int(i)
 
 		case "peers":
-			// var p []Peer
 			p, err := r.decodePeers()
 			if err != nil {
 				return nil, err

@@ -1,6 +1,10 @@
 package main
 
 import (
+	"bytes"
+	crand "crypto/rand"
+	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -19,14 +23,24 @@ const INIT = "FS"
 const VERSION = "0001"
 const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
-type Connection struct {
-	connectionType string
-	connectionId   string
-	client         http.Client
-	peerId         string
+type ConnectionRequest struct {
+	ProtocolId    uint64
+	Action        uint32
+	TransactionId uint32
 }
 
-var connection Connection
+type ConnectionResponse struct {
+	Action        uint32
+	TransactionId uint32
+	ConnectionId  uint64
+}
+
+type HttpConnection struct {
+	client http.Client
+	peerId string
+}
+
+// var connection Connection
 
 // func urlEncode(b []byte) string {
 // 	return url.QueryEscape(string(b))
@@ -56,7 +70,7 @@ func GeneratePeerId() string {
 	return prefix + string(b)
 }
 
-func BuildTrackerUrl(trakerAddr string, infoHash []byte, totalLength int64) (string, error) {
+func BuildTrackerUrl(trakerAddr string, infoHash []byte, totalLength int64, connection *HttpConnection) (string, error) {
 	u, err := url.Parse(trakerAddr)
 	if err != nil {
 		return "", err
@@ -76,7 +90,7 @@ func BuildTrackerUrl(trakerAddr string, infoHash []byte, totalLength int64) (str
 	return u.String(), nil
 }
 
-func UdpRequest(url string) {
+func UdpRequest(url string) (*ConnectionResponse, error) {
 	// Remove the udp:// part
 	u := strings.Split(url, "://")[1]
 
@@ -97,17 +111,53 @@ func UdpRequest(url string) {
 	}
 	defer conn.Close()
 
-	data := []byte("hello traker")
-	_, err = conn.Write(data)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "Error writing to UDP connection: ", err)
-		os.Exit(1)
+	var transactionId uint32
+	binary.Read(crand.Reader, binary.BigEndian, &transactionId)
+
+	req := ConnectionRequest{
+		ProtocolId:    0x41727101980,
+		Action:        0,
+		TransactionId: transactionId,
 	}
 
-	fmt.Println("Sent UDP packet to", addr.String())
+	buf := new(bytes.Buffer)
+	if err := binary.Write(buf, binary.BigEndian, req); err != nil {
+		return nil, err
+	}
+
+	if _, err := conn.Write(buf.Bytes()); err != nil {
+		fmt.Fprintln(os.Stderr, "Error writing to UDP connection: ", err)
+		return nil, err
+	}
+	fmt.Println("Sent connect Request...")
+
+	respBuf := make([]byte, 16)
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	_, err = conn.Read(respBuf)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Failed to read response buffer...")
+		return nil, err
+	}
+
+	var resp ConnectionResponse
+	respReader := bytes.NewReader(respBuf)
+	if err := binary.Read(respReader, binary.BigEndian, &resp); err != nil {
+		fmt.Fprintln(os.Stderr, "Failed to parse response...")
+		return nil, err
+	}
+
+	if resp.TransactionId != transactionId {
+		return nil, errors.New("transaction id mismatch")
+	}
+	if resp.Action != 0 {
+		return nil, errors.New("invalid action response")
+	}
+
+	fmt.Println("Received Connection id ", resp.ConnectionId)
+	return nil, nil
 }
 
-func HTTPRequest(url string) ([]byte, error) {
+func HTTPRequest(url string, connection *HttpConnection) ([]byte, error) {
 	connection.client = http.Client{Timeout: 15 * time.Second}
 
 	res, err := connection.client.Get(url)
@@ -150,22 +200,17 @@ func RequestTracker(path string) (*parser.Response, error) {
 		os.Exit(1)
 	}
 
+	var connection HttpConnection
+
 	connection.peerId = GeneratePeerId()
-	// rawHash, err := hex.DecodeString(t.InfoHash)
-	// if err != nil {
-	// 	fmt.Fprintln(os.Stderr, "Invalid infohash:", err)
-	// 	os.Exit(1)
-	// }
+	trackerAddr, err := BuildTrackerUrl(t.Announce, t.InfoHash, t.TotalLength, &connection)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Error building tracker url: ", err)
+		os.Exit(1)
+	}
 
 	if strings.HasPrefix(u.Scheme, "http") {
-		connection.connectionType = "http"
-
-		trackerAddr, err := BuildTrackerUrl(t.Announce, t.InfoHash, t.TotalLength)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "Error building tracker url: ", err)
-			os.Exit(1)
-		}
-		body, err := HTTPRequest(trackerAddr)
+		body, err := HTTPRequest(trackerAddr, &connection)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Error while making Request to the tracker: ", err)
 			os.Exit(1)
@@ -178,11 +223,10 @@ func RequestTracker(path string) (*parser.Response, error) {
 		}
 		return res, nil
 	} else if u.Scheme == "udp" {
-		connection.connectionType = "udp"
 		fmt.Println("This is a UDP tracker using the UDP Request method")
-		return nil, nil
+		UdpRequest(t.Announce)
+		return nil, fmt.Errorf("udp udp")
 	} else {
-		connection.connectionType = "unknown"
 		fmt.Println("This is an unknown protocol", u.Scheme)
 		return nil, nil
 	}
@@ -191,13 +235,13 @@ func RequestTracker(path string) (*parser.Response, error) {
 
 func main() {
 	// UdpRequest("udp://tracker.opentrackr.org:1337/announce")
-	res, err := RequestTracker("../test_files/debian-installer.torrent")
+	res, err := RequestTracker("../test_files/single_file.torrent")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 
-	fmt.Println(res)
+	fmt.Println(*res)
 	// UdpRequest("http://bttracker.debian.org:6969/announce")
 
 	// DEBUG
