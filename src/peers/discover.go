@@ -40,6 +40,19 @@ type HttpConnection struct {
 	peerId string
 }
 
+type AnnounceRequest struct {
+	ConnectionId  uint64
+	Action        uint32
+	TransactionId uint32
+	InfoHash      []byte
+	PeerId        string
+	Downloaded    uint64
+	Left          uint64
+	Uploaded      uint64
+	Event         uint32
+	Port          uint16
+}
+
 // var connection Connection
 
 // func urlEncode(b []byte) string {
@@ -70,6 +83,12 @@ func GeneratePeerId() string {
 	return prefix + string(b)
 }
 
+func GenerateTransactionId() uint32 {
+	var b [4]byte
+	crand.Read(b[:])
+	return binary.BigEndian.Uint32(b[:])
+}
+
 func BuildTrackerUrl(trakerAddr string, infoHash []byte, totalLength int64, connection *HttpConnection) (string, error) {
 	u, err := url.Parse(trakerAddr)
 	if err != nil {
@@ -90,7 +109,7 @@ func BuildTrackerUrl(trakerAddr string, infoHash []byte, totalLength int64, conn
 	return u.String(), nil
 }
 
-func UdpRequest(url string) (*ConnectionResponse, error) {
+func UdpRequest(url string, infoHash []byte, peerId string, totalSize uint64) ([]byte, error) {
 	// Remove the udp:// part
 	u := strings.Split(url, "://")[1]
 
@@ -111,15 +130,16 @@ func UdpRequest(url string) (*ConnectionResponse, error) {
 	}
 	defer conn.Close()
 
-	var transactionId uint32
-	binary.Read(crand.Reader, binary.BigEndian, &transactionId)
+	// var transactionId uint32
+	// binary.Read(crand.Reader, binary.BigEndian, &transactionId)
 
 	req := ConnectionRequest{
 		ProtocolId:    0x41727101980,
 		Action:        0,
-		TransactionId: transactionId,
+		TransactionId: GenerateTransactionId(),
 	}
 
+	// Send connect request
 	buf := new(bytes.Buffer)
 	if err := binary.Write(buf, binary.BigEndian, req); err != nil {
 		return nil, err
@@ -131,6 +151,7 @@ func UdpRequest(url string) (*ConnectionResponse, error) {
 	}
 	fmt.Println("Sent connect Request...")
 
+	// Receive connect response
 	respBuf := make([]byte, 16)
 	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	_, err = conn.Read(respBuf)
@@ -146,15 +167,46 @@ func UdpRequest(url string) (*ConnectionResponse, error) {
 		return nil, err
 	}
 
-	if resp.TransactionId != transactionId {
+	if resp.TransactionId != req.TransactionId {
 		return nil, errors.New("transaction id mismatch")
 	}
 	if resp.Action != 0 {
 		return nil, errors.New("invalid action response")
 	}
 
-	fmt.Println("Received Connection id ", resp.ConnectionId)
+	// fmt.Println("Received Connection id ", resp.ConnectionId)
+	// return &resp, nil
+
+	annReq := AnnounceRequest{
+		ConnectionId:  resp.ConnectionId,
+		Action:        1,
+		TransactionId: GenerateTransactionId(),
+		PeerId:        peerId,
+		Downloaded:    0,
+		Left:          totalSize,
+		Uploaded:      0,
+		Event:         2,
+		Port:          PORT,
+	}
+	copy(annReq.InfoHash[:], infoHash)
+
+	buf.Reset()
+	binary.Write(buf, binary.BigEndian, annReq)
+	_, err = conn.Write(buf.Bytes())
+	if err != nil {
+		return nil, err
+	}
+
+	annResBuf := make([]byte, 2048)
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	// n, err := conn.Read(annResBuf)
+	// if err != nil {
+	// 	return nil, err
+	// }
+
+	fmt.Println(annResBuf)
 	return nil, nil
+	// respReader = bytes.NewReader(annResBuf[:20])
 }
 
 func HTTPRequest(url string, connection *HttpConnection) ([]byte, error) {
@@ -224,7 +276,7 @@ func RequestTracker(path string) (*parser.Response, error) {
 		return res, nil
 	} else if u.Scheme == "udp" {
 		fmt.Println("This is a UDP tracker using the UDP Request method")
-		UdpRequest(t.Announce)
+		UdpRequest(t.Announce, t.InfoHash[:], connection.peerId, uint64(t.TotalLength))
 		return nil, fmt.Errorf("udp udp")
 	} else {
 		fmt.Println("This is an unknown protocol", u.Scheme)
