@@ -42,6 +42,11 @@ type Reader struct {
 	pos int
 }
 
+// Read implements io.Reader.
+func (r *Reader) Read(p []byte) (n int, err error) {
+	panic("unimplemented")
+}
+
 func NewReader(b []byte) *Reader {
 	return &Reader{b: b}
 }
