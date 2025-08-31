@@ -1,6 +1,12 @@
 package parser
 
-import "fmt"
+import (
+	"bytes"
+	"encoding/binary"
+	"fmt"
+	"io"
+	"net"
+)
 
 // d
 // 8:intervali900e
@@ -14,13 +20,13 @@ import "fmt"
 // e
 
 type Response struct {
-	Interval int
+	Interval uint32
 	Peers    []Peer
 }
 
 type Peer struct {
-	Ip   string
-	Port int
+	Ip   net.IP
+	Port uint16
 }
 
 func (r *Reader) decodePeer() (*Peer, error) {
@@ -52,13 +58,13 @@ func (r *Reader) decodePeer() (*Peer, error) {
 			if err != nil {
 				return nil, err
 			}
-			peer.Ip = ip
+			peer.Ip = net.ParseIP(ip)
 		case "port":
 			port, err := r.readInt()
 			if err != nil {
 				return nil, err
 			}
-			peer.Port = int(port)
+			peer.Port = uint16(port)
 		}
 	}
 	return &peer, nil
@@ -94,7 +100,7 @@ func (r *Reader) decodePeers() ([]Peer, error) {
 	return p, nil
 }
 
-func (r *Reader) DecodeResponse() (*Response, error) {
+func (r *Reader) DecodeHttpResponse() (*Response, error) {
 	var res Response
 
 	err := r.expectByte('d')
@@ -124,7 +130,7 @@ func (r *Reader) DecodeResponse() (*Response, error) {
 			if err != nil {
 				return nil, err
 			}
-			res.Interval = int(i)
+			res.Interval = uint32(i)
 
 		case "peers":
 			p, err := r.decodePeers()
@@ -136,4 +142,32 @@ func (r *Reader) DecodeResponse() (*Response, error) {
 	}
 
 	return &res, nil
+}
+
+func DecodeUDPResponse(peersBin []byte) ([]Peer, error) {
+	if len(peersBin)%6 != 0 {
+		return nil, fmt.Errorf("invalid peers list length: %d", len(peersBin))
+	}
+	numPeers := len(peersBin) / 6
+	peers := make([]Peer, 0, numPeers)
+	reader := bytes.NewReader(peersBin)
+
+	for i := 0; i < numPeers; i++ {
+		var peer struct {
+			IP   [4]byte
+			Port uint16
+		}
+		if err := binary.Read(reader, binary.BigEndian, &peer); err != nil {
+			if err == io.EOF {
+				break
+			}
+			return nil, err
+		}
+		p := Peer{
+			Ip:   net.IP(peer.IP[:]),
+			Port: peer.Port,
+		}
+		peers = append(peers, p)
+	}
+	return peers, nil
 }

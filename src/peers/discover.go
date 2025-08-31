@@ -21,6 +21,7 @@ import (
 const PORT = 6881
 const INIT = "FS"
 const VERSION = "0001"
+const NUM_PEERS = 50
 const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 type ConnectionRequest struct {
@@ -62,6 +63,11 @@ type AnnounceResponse struct {
 	Inverval      uint32
 	Leechers      uint32
 	Seeders       uint32
+}
+
+type Peer struct {
+	IP   net.IP
+	Port uint16
 }
 
 // var connection Connection
@@ -120,7 +126,7 @@ func BuildTrackerUrl(trakerAddr string, infoHash []byte, totalLength int64, conn
 	return u.String(), nil
 }
 
-func UdpRequest(url string, infoHash []byte, peerId []byte, totalSize uint64) ([]byte, error) {
+func UdpRequest(url string, infoHash []byte, peerId []byte, totalSize uint64) ([]byte, *AnnounceResponse, error) {
 	// Remove the udp:// part
 	u := strings.Split(url, "://")[1]
 
@@ -128,14 +134,16 @@ func UdpRequest(url string, infoHash []byte, peerId []byte, totalSize uint64) ([
 	trakerAddr := strings.Split(u, "/")[0]
 	addr, err := net.ResolveUDPAddr("udp", trakerAddr)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Error resolving UDP address: ", err)
-		os.Exit(1)
+		return nil, nil, err
+		// fmt.Errorf("Error resolving UDP address: ", err)
+		// os.Exit(1)
 	}
 
 	conn, err := net.DialUDP("udp", nil, addr)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Error Dialing UDP address: ", err)
-		os.Exit(1)
+		// fmt.Fprintln(os.Stderr, "Error Dialing UDP address: ", err)
+		// os.Exit(1)
+		return nil, nil, err
 	}
 	defer conn.Close()
 
@@ -148,11 +156,11 @@ func UdpRequest(url string, infoHash []byte, peerId []byte, totalSize uint64) ([
 
 	buf := new(bytes.Buffer)
 	if err := binary.Write(buf, binary.BigEndian, req); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if _, err := conn.Write(buf.Bytes()); err != nil {
 		fmt.Fprintln(os.Stderr, "Error writing to UDP connection: ", err)
-		return nil, err
+		return nil, nil, err
 	}
 	// fmt.Println("Sent connect Request...")
 
@@ -162,20 +170,20 @@ func UdpRequest(url string, infoHash []byte, peerId []byte, totalSize uint64) ([
 	_, err = conn.Read(respBuf)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Failed to read response buffer...")
-		return nil, err
+		return nil, nil, err
 	}
 	var resp ConnectionResponse
 	respReader := bytes.NewReader(respBuf)
 	if err := binary.Read(respReader, binary.BigEndian, &resp); err != nil {
 		fmt.Fprintln(os.Stderr, "Failed to parse response...")
-		return nil, err
+		return nil, nil, err
 	}
 
 	if resp.TransactionId != req.TransactionId {
-		return nil, errors.New("transaction id mismatch")
+		return nil, nil, errors.New("transaction id mismatch")
 	}
 	if resp.Action != 0 {
-		return nil, errors.New("invalid action response")
+		return nil, nil, errors.New("invalid action response")
 	}
 	// fmt.Println("Received Connection id ", resp.ConnectionId)
 
@@ -190,7 +198,7 @@ func UdpRequest(url string, infoHash []byte, peerId []byte, totalSize uint64) ([
 		Event:         2,
 		IpAddress:     0,
 		Key:           rand.Uint32(),
-		NumWant:       -1,
+		NumWant:       NUM_PEERS,
 		Port:          PORT,
 	}
 	copy(annReq.InfoHash[:], infoHash)
@@ -200,18 +208,18 @@ func UdpRequest(url string, infoHash []byte, peerId []byte, totalSize uint64) ([
 	binary.Write(buf, binary.BigEndian, annReq)
 	_, err = conn.Write(buf.Bytes())
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	// fmt.Println("Set Announce Request")
 	// fmt.Println("Announce Request ", annReq)
 
-	// Reseive announce response
+	// Receive announce response
 	annResBuf := make([]byte, 2048)
 	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-	n, err := conn.Read(annResBuf)
+	_, err = conn.Read(annResBuf)
 	if err != nil {
 		// fmt.Println("error ", err)
-		return nil, err
+		return nil, nil, err
 	}
 
 	var annRes AnnounceResponse
@@ -219,10 +227,10 @@ func UdpRequest(url string, infoHash []byte, peerId []byte, totalSize uint64) ([
 	binary.Read(respReader, binary.BigEndian, &annRes)
 
 	if annRes.TransactionId != annReq.TransactionId {
-		return nil, fmt.Errorf("transaction id mismatch in announce response")
+		return nil, nil, fmt.Errorf("transaction id mismatch in announce response")
 	}
 
-	return annResBuf[:n], nil
+	return annResBuf, &annRes, nil
 }
 
 func HTTPRequest(url string, connection *HttpConnection) ([]byte, error) {
@@ -285,26 +293,28 @@ func RequestTracker(path string) (*parser.Response, error) {
 		}
 
 		r := parser.NewReader(body)
-		res, err := r.DecodeResponse()
+		res, err := r.DecodeHttpResponse()
 		if err != nil {
 			return nil, err
 		}
 		return res, nil
 	} else if u.Scheme == "udp" {
 		fmt.Println("This is a UDP tracker using the UDP Request method")
-		peers, err := UdpRequest(t.Announce, t.InfoHash[:], []byte(connection.peerId), uint64(t.TotalLength))
+		rawRes, annRes, err := UdpRequest(t.Announce, t.InfoHash[:], []byte(connection.peerId), uint64(t.TotalLength))
 		if err != nil {
 			return nil, err
 		}
-		fmt.Println("udp body: ", string(peers[:20]))
+		// fmt.Println("udp body: ", string(peers[:20]))
+		peers, err := parser.DecodeUDPResponse(rawRes[20:])
+		if err != nil {
+			return nil, err
+		}
 
-		r := parser.NewReader(peers)
-		res, err := r.DecodeResponse()
-		if err != nil {
-			return nil, err
+		res := parser.Response{
+			Interval: annRes.Inverval,
+			Peers:    peers[:NUM_PEERS],
 		}
-		return res, nil
-		// fmt.Println(peers)
+		return &res, nil
 	} else {
 		fmt.Println("This is an unknown protocol", u.Scheme)
 		return nil, nil
@@ -320,7 +330,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Println(*res)
+	fmt.Println(res)
+
 	// UdpRequest("http://bttracker.debian.org:6969/announce")
 
 	// DEBUG
