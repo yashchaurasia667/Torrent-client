@@ -1,4 +1,4 @@
-package main
+package peers
 
 import (
 	"bytes"
@@ -322,7 +322,7 @@ func RequestTracker(path string) (*parser.Response, error) {
 
 }
 
-func main() {
+func test() {
 	// UdpRequest("udp://tracker.opentrackr.org:1337/announce")
 	res, err := RequestTracker("../test_files/single_file.torrent")
 	if err != nil {

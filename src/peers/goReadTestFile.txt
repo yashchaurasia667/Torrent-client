@@ -1,6 +1,0 @@
-this is a 
-multiple 
-line test
-FILE 
-1234
-!$
