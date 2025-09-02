@@ -3,6 +3,7 @@ package peers
 import (
 	"fmt"
 	"net"
+	"torrent-client/parser"
 )
 
 type initTCPconn struct {
@@ -10,9 +11,9 @@ type initTCPconn struct {
 	port uint32
 }
 
-func StartConnections(peers []Peer) error {
+func StartPeerConnections(peers []parser.Peer) error {
 	for _, peer := range peers {
-		lis, err := net.Listen("tcp", peer.IP.String()+":"+string(peer.Port))
+		lis, err := net.Listen("tcp", peer.Ip.String()+":"+string(peer.Port))
 		if err != nil {
 			return err
 		}

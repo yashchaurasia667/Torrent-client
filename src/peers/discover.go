@@ -65,32 +65,6 @@ type AnnounceResponse struct {
 	Seeders       uint32
 }
 
-type Peer struct {
-	IP   net.IP
-	Port uint16
-}
-
-// var connection Connection
-
-// func urlEncode(b []byte) string {
-// 	return url.QueryEscape(string(b))
-// }
-
-// func percentEncode(b []byte) string {
-// 	var sb strings.Builder
-// 	for _, c := range b {
-// 		if (c >= 'a' && c <= 'z') ||
-// 			(c >= 'A' && c <= 'Z') ||
-// 			(c >= '0' && c <= '9') ||
-// 			c == '-' || c == '_' || c == '.' || c == '~' {
-// 			sb.WriteByte(c)
-// 		} else {
-// 			sb.WriteString(fmt.Sprintf("%%%02X", c))
-// 		}
-// 	}
-// 	return sb.String()
-// }
-
 func GeneratePeerId() string {
 	prefix := "-" + INIT + VERSION
 	b := make([]byte, 13)
@@ -248,7 +222,7 @@ func HTTPRequest(url string, connection *HttpConnection) ([]byte, error) {
 	}
 
 	// DEBUG
-	fmt.Println("Successfully made a GET request to ", url)
+	// fmt.Println("Successfully made a GET request to ", url)
 
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
@@ -287,7 +261,7 @@ func RequestTracker(t *parser.Torrent) (*parser.Response, error) {
 		}
 		return res, nil
 	} else if u.Scheme == "udp" {
-		fmt.Println("This is a UDP tracker using the UDP Request method")
+		// fmt.Println("This is a UDP tracker using the UDP Request method")
 		rawRes, annRes, err := UdpRequest(t.Announce, t.InfoHash[:], []byte(connection.peerId), uint64(t.TotalLength))
 		if err != nil {
 			return nil, err

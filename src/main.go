@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"torrent-client/parser"
+	"torrent-client/peers"
 )
 
 func check(path string) {
@@ -28,4 +30,27 @@ func main() {
 	}
 	// check for file and path validity
 	check(args[1])
+	// [DEBUG]
+	// fmt.Println("ALL CHECKS PASSED...")
+
+	// Read file and Get decoded struct
+	data, err := os.ReadFile(args[1])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Read: ", err)
+		os.Exit(1)
+	}
+
+	t, err := parser.AssembleTorrent(data)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Error while reading torrent file: ", err)
+		os.Exit(1)
+	}
+
+	res, err := peers.RequestTracker(t)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+
+	peers.StartPeerConnections(res.Peers)
 }
