@@ -1,19 +1,23 @@
 package peers
 
-type Handshake struct {
-	Length    uint64
-	Protocol  []byte
-	Reserverd []byte
-	InfoHash  [20]byte
-	PeerId    []byte
+import (
+	"fmt"
+	"net"
+)
+
+type initTCPconn struct {
+	host net.IP
+	port uint32
 }
 
-func hShake(infoHash [20]byte, peerId string) {
-	hs := Handshake{
-		Length:    19,
-		Protocol:  []byte("BitTorrent protocol"),
-		Reserverd: make([]byte, 8),
-		InfoHash:  infoHash,
-		PeerId:    []byte(peerId),
+func StartConnections(peers []Peer) error {
+	for _, peer := range peers {
+		lis, err := net.Listen("tcp", peer.IP.String()+":"+string(peer.Port))
+		if err != nil {
+			return err
+		}
+
+		fmt.Println(lis)
 	}
+	return nil
 }

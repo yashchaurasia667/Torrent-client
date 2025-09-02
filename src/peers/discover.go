@@ -257,19 +257,7 @@ func HTTPRequest(url string, connection *HttpConnection) ([]byte, error) {
 	return body, nil
 }
 
-func RequestTracker(path string) (*parser.Response, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "read: ", err)
-		os.Exit(1)
-	}
-
-	t, err := parser.AssembleTorrent(data)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "Error while reading torrent file: ", err)
-		os.Exit(1)
-	}
-
+func RequestTracker(t *parser.Torrent) (*parser.Response, error) {
 	u, err := url.Parse(t.Announce)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Error while parsing URL: ", err)
@@ -322,9 +310,21 @@ func RequestTracker(path string) (*parser.Response, error) {
 
 }
 
-func test() {
+func Test() {
 	// UdpRequest("udp://tracker.opentrackr.org:1337/announce")
-	res, err := RequestTracker("../test_files/single_file.torrent")
+	data, err := os.ReadFile("../test_files/single_file.torrent")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "read: ", err)
+		os.Exit(1)
+	}
+
+	t, err := parser.AssembleTorrent(data)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Error while reading torrent file: ", err)
+		os.Exit(1)
+	}
+
+	res, err := RequestTracker(t)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

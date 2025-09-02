@@ -152,7 +152,7 @@ func DecodeUDPResponse(peersBin []byte) ([]Peer, error) {
 	peers := make([]Peer, 0, numPeers)
 	reader := bytes.NewReader(peersBin)
 
-	for i := 0; i < numPeers; i++ {
+	for range numPeers {
 		var peer struct {
 			IP   [4]byte
 			Port uint16
