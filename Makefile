@@ -1,6 +1,9 @@
 CC := gcc
 CFLAGS := -Wall -Wextra -O2 -Iinclude
 
+GO := go
+GO_SRC := ./src
+
 # Directories
 SRC_DIR := ./src/parser
 OBJ_DIR := build
@@ -12,7 +15,7 @@ SRCS := $(wildcard $(SRC_DIR)/*.c)
 OBJS := $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(SRCS))
 
 # Default rule
-all: $(TARGET)
+all: go-build
 
 # Link the target
 $(TARGET): $(OBJS) | $(BIN_DIR)
@@ -34,3 +37,9 @@ parser: $(TARGET)
 	./$(TARGET) ./src/parser/test_files/single_file.torrent
 
 .PHONY: all clean
+
+go-build: $(GO_SRC) | $(BIN_DIR)
+	$(GO) build  -o ./$(BIN_DIR) $(GO_SRC)
+
+torrent-client: go-build
+	./$(BIN_DIR)/torrent-client

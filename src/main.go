@@ -52,5 +52,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	peers.StartPeerConnections(res.Peers)
+	err = peers.StartPeerConnections(res.Peers, t.InfoHash, []byte(peers.GetPeerId()))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 }

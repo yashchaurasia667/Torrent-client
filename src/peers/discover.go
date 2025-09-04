@@ -65,6 +65,12 @@ type AnnounceResponse struct {
 	Seeders       uint32
 }
 
+var connection HttpConnection
+
+func GetPeerId() string {
+	return connection.peerId
+}
+
 func GeneratePeerId() string {
 	prefix := "-" + INIT + VERSION
 	b := make([]byte, 13)
@@ -237,8 +243,6 @@ func RequestTracker(t *parser.Torrent) (*parser.Response, error) {
 		fmt.Fprintln(os.Stderr, "Error while parsing URL: ", err)
 		os.Exit(1)
 	}
-
-	var connection HttpConnection
 
 	connection.peerId = GeneratePeerId()
 	trackerAddr, err := BuildTrackerUrl(t.Announce, t.InfoHash, t.TotalLength, &connection)
