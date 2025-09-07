@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"os"
+	// "os"
 	"strconv"
 	"time"
 	"torrent-client/parser"
@@ -26,7 +26,7 @@ func buildHandshake(infoHash []byte, peerId []byte) []byte {
 
 func PerformHandshake(peer parser.Peer, infoHash []byte, peerId []byte) ([]byte, error) {
 	dest := net.JoinHostPort(peer.Ip.String(), strconv.FormatUint(uint64(peer.Port), 10))
-	fmt.Println("Connecting to", dest)
+	// fmt.Println("Connecting to", dest)
 
 	conn, err := net.DialTimeout("tcp", dest, 5*time.Second)
 	if err != nil {
@@ -69,7 +69,7 @@ func StartPeerConnections(peers []parser.Peer, infoHash []byte, peerId []byte) e
 	for _, peer := range peers {
 		recvHash, err := PerformHandshake(peer, infoHash, peerId)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "Handshake failed", err)
+			// fmt.Fprintln(os.Stderr, "Handshake failed", err)
 			continue
 		}
 
