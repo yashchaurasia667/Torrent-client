@@ -5,16 +5,28 @@ import (
 	"fmt"
 	"io"
 	"net"
-
-	// "os"
 	"strconv"
 	"time"
 	"torrent-client/parser"
 )
 
-const PROTOCOL_STRING = "BitTorrent protocol"
+/*
+MESSAGE STRUCTURE
+TOTAL LENGTH -> 68 bytes
+{
+	0: length of protocol string, 19 in this case
+	1: protocol string, "BitTorrent Protocol" in this case
+	20: 8 0 bytes, make([]byte, 8)
+	28: info hash of the torrent
+	48: your peer id
+}
+*/
 
-type connectedPeer struct {
+const PROTOCOL_STRING = "BitTorrent protocol"
+const HANDSHAKE_TIMEOUT = 3
+
+type ConnectedPeer struct {
+	Conn   net.Conn
 	Ip     net.IP
 	PeerId [20]byte
 }
@@ -36,58 +48,61 @@ func validateResponse(resp []byte, infoHash []byte) error {
 		return fmt.Errorf("bitfield mismatch")
 	} else if string(resp)[1:20] != PROTOCOL_STRING {
 		return fmt.Errorf("protocol mismatched expected %s got %s", PROTOCOL_STRING, string(resp[1:20]))
-	} else if !bytes.Equal(resp[20:48], infoHash) {
+	} else if !bytes.Equal(resp[28:48], infoHash) {
 		return fmt.Errorf("info hash mismatch")
 	} else {
 		return nil
 	}
 }
 
-func PerformHandshake(peer parser.Peer, infoHash []byte, peerId []byte) ([]byte, net.IP, error) {
+func PerformHandshake(peer parser.Peer, infoHash []byte, peerId []byte) (*ConnectedPeer, error) {
 	dest := net.JoinHostPort(peer.Ip.String(), strconv.FormatUint(uint64(peer.Port), 10))
+	// fmt.Println("Connecting to", dest)
 
-	conn, err := net.DialTimeout("tcp", dest, 5*time.Second)
+	conn, err := net.DialTimeout("tcp", dest, HANDSHAKE_TIMEOUT*time.Second)
 	if err != nil {
-		return nil, nil, err
+		conn.Close()
+		return nil, err
 	}
-	// TODO: DON'T CLOSE THE CONNECTION AFTER RECEIVING THE HANDSHAKE BUT INSTANTLY MOVE TO DOWNLOADING PEICES
-	defer conn.Close()
 
 	// Send handshake
 	handshake := buildHandshake(infoHash, peerId)
 	_, err = conn.Write(handshake)
 	if err != nil {
-		return nil, nil, err
+		conn.Close()
+		return nil, err
 	}
 
 	// Receive handshake
 	resp := make([]byte, 68)
 	_, err = io.ReadFull(conn, resp)
 	if err != nil {
-		return nil, nil, err
+		conn.Close()
+		return nil, err
 	}
 
 	// Validate response
 	if err := validateResponse(resp, infoHash); err != nil {
-		return nil, nil, err
+		fmt.Println("Error: ", err)
+		// fmt.Println("Given infoHash: ", infoHash)
+		// fmt.Println("Received infohash", resp[20:48])
+		conn.Close()
+		return nil, err
 	}
 
-	fmt.Println("Connected to peer", peer.Ip)
-	return resp[:], peer.Ip, nil
+	// fmt.Println("Connected to peer", peer.Ip)
+	return &ConnectedPeer{conn, peer.Ip, [20]byte(resp[48:])}, nil
 }
 
-func StartPeerConnections(peers []parser.Peer, infoHash []byte, peerId []byte) error {
-	var available_peers []connectedPeer
-	for _, peer := range peers {
-		resp, ip, err := PerformHandshake(peer, infoHash, peerId)
-		if err != nil {
-			// fmt.Fprintln(os.Stderr, "Handshake failed", err)
-			continue
-		}
-		if err = validateResponse(resp, infoHash); err != nil {
-			return err
-		}
-		available_peers = append(available_peers, connectedPeer{Ip: ip, PeerId: [20]byte(resp[48:])})
-	}
-	return nil
-}
+// func StartPeerConnections(peers []parser.Peer, infoHash []byte, peerId []byte) ([]ConnectedPeer, error) {
+// 	var available_peers []ConnectedPeer
+// 	for _, peer := range peers {
+// 		resp, ip, err := PerformHandshake(peer, infoHash, peerId)
+// 		if err != nil {
+// 			continue
+// 		}
+
+// 		available_peers = append(available_peers, ConnectedPeer{Ip: ip, PeerId: [20]byte(resp[48:])})
+// 	}
+// 	return available_peers, nil
+// }

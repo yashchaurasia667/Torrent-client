@@ -52,7 +52,6 @@ func NewReader(b []byte) *Reader {
 }
 
 // READER UTIL FUNCTION
-
 func (r *Reader) readByte() (byte, error) {
 	if r.pos >= len(r.b) {
 		return 0, io.ErrUnexpectedEOF
