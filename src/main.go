@@ -22,7 +22,7 @@ func check(path string) {
 
 func main() {
 	args := os.Args
-	var available_peers []peers.ConnectedPeer
+	// var available_peers []*peers.ConnectedPeer
 
 	// Exit if no file path is passed
 	if len(args) < 2 {
@@ -55,17 +55,13 @@ func main() {
 
 	for _, peer := range res.Peers {
 		c, err := peers.PerformHandshake(peer, t.InfoHash, []byte(peers.GetPeerId()))
-		if err != nil {
-			fmt.Println("Error: ", err)
+		if err != nil && c == nil {
+			// fmt.Println("Error: ", err)
 			continue
 		}
 
-		available_peers = append(available_peers, *c)
-		resp, err := peers.SendInterested(c.Conn)
-		if err != nil {
-			continue
-		}
-		fmt.Println(peer.Ip.String(), "responded to interested message with", resp)
-		// fmt.Printf("%s responded to interested message with %x", peer.Ip.String(), resp)
+		// available_peers = append(available_peers, c)
+		intr := peers.CheckInterested(c.Conn)
+		fmt.Println(peer.Ip.String(), "responded to interested message with", intr)
 	}
 }
