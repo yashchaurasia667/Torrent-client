@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"torrent-client/download"
 	"torrent-client/parser"
 	"torrent-client/peers"
 )
@@ -22,6 +23,7 @@ func check(path string) {
 
 func main() {
 	args := os.Args
+	var downloaded []byte
 	// var available_peers []*peers.ConnectedPeer
 
 	// Exit if no file path is passed
@@ -46,6 +48,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "Error while reading torrent file: ", err)
 		os.Exit(1)
 	}
+	downloaded = make([]byte, t.Info.PieceCount/8)
 
 	res, err := peers.RequestTracker(t)
 	if err != nil {
@@ -55,13 +58,22 @@ func main() {
 
 	for _, peer := range res.Peers {
 		c, err := peers.PerformHandshake(peer, t.InfoHash, []byte(peers.GetPeerId()))
-		if err != nil && c == nil {
+		if err != nil || c == nil {
 			// fmt.Println("Error: ", err)
 			continue
 		}
 
 		// available_peers = append(available_peers, c)
 		intr := peers.CheckInterested(c.Conn)
-		fmt.Println(peer.Ip.String(), "responded to interested message with", intr)
+		if intr {
+			fmt.Println(peer.Ip.String(), "has unchoked you. Now requesting a piece")
+			index, err := download.GetNextDownloadablePiece(c.Bitfield, downloaded)
+			if err != nil {
+				fmt.Println("Error: ", err)
+				continue
+			}
+
+			fmt.Println("Next downloadable index: ", index)
+		}
 	}
 }

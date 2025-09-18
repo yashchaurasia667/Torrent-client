@@ -2,7 +2,6 @@ package peers
 
 import (
 	"encoding/binary"
-	"fmt"
 	"io"
 	"net"
 )
@@ -32,8 +31,7 @@ func CheckInterested(conn net.Conn) bool {
 	}
 
 	resp, err := AwaitResponse(conn, 5)
-	if len(resp) > 0 && resp[len(resp)-1] != 1 {
-		fmt.Println(len(resp))
+	if (len(resp) > 0 && resp[len(resp)-1] != 1) || err != nil {
 		return false
 	}
 	return true
@@ -45,5 +43,26 @@ func AwaitResponse(conn net.Conn, size uint32) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	return resp, nil
+}
+
+func RequestPiece(conn net.Conn, pieceIndex uint32, begin uint32, length uint32) ([]byte, error) {
+	msg := make([]byte, 17)
+	binary.BigEndian.PutUint32(msg[0:4], 13)
+	msg[4] = 6
+	binary.BigEndian.PutUint32(msg[5:9], pieceIndex)
+	binary.BigEndian.PutUint32(msg[9:13], begin)
+	binary.BigEndian.PutUint32(msg[13:17], length)
+
+	_, err := conn.Write(msg)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := AwaitResponse(conn, 13+length)
+	if err != nil {
+		return nil, err
+	}
+
 	return resp, nil
 }
