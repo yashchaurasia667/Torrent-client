@@ -22,6 +22,8 @@ func check(path string) {
 }
 
 func main() {
+	fmt.Println(download.GetFirstDisabledBit(254))
+
 	args := os.Args
 	var downloaded []byte
 	// var available_peers []*peers.ConnectedPeer
