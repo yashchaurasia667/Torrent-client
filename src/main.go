@@ -22,8 +22,6 @@ func check(path string) {
 }
 
 func main() {
-	fmt.Println(download.GetFirstDisabledBit(254))
-
 	args := os.Args
 	var downloaded []byte
 	// var available_peers []*peers.ConnectedPeer
@@ -75,7 +73,8 @@ func main() {
 				continue
 			}
 
-			fmt.Println("Next downloadable index: ", index)
+			// fmt.Println("Next downloadable index: ", index)
+			peers.RequestPiece()
 		}
 	}
 }
