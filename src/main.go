@@ -70,6 +70,7 @@ func main() {
 			piece, err := download.DownloadPiece(c.Conn, c.Bitfield, downloaded, t.Info.PieceLength, t.Info.PieceHashes)
 			if err != nil {
 				fmt.Println("Error: ", err)
+				fmt.Println()
 				continue
 			}
 

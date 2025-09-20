@@ -47,9 +47,9 @@ func getIndex(bitfield byte, downloaded byte) int {
 		}
 		// CHECK IF THAT BIT IS SET IN BITFIELD IF SO GET THE NEXT BIT THAT'S SET IN BITFIELD
 		changeBit := byte(1 << ind)
-		diff := (bitfield >> ind) & changeBit
-		if diff == 1 {
-			return ind
+		diff := bitfield & changeBit
+		if diff != 0 {
+			return 7 - ind
 		}
 		// ELSE SET THE ZERO BIT TO ONE AND REPEAT
 		downloaded += changeBit
@@ -106,8 +106,7 @@ func DownloadPiece(conn net.Conn, bitfield []byte, downloaded []byte, pieceLengt
 		}
 	}
 	fmt.Println("Downloaded piece index:", pieceIndex)
-	downloaded[dIndex] += byte(1 << bIndex)
-	fmt.Println(downloaded[dIndex])
+	downloaded[dIndex] += byte(1 << (7 - bIndex))
 
 	// verify the downloaded piece
 	expected := piecesHash[pieceIndex]
