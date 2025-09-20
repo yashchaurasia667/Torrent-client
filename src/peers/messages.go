@@ -46,7 +46,7 @@ func AwaitResponse(conn net.Conn, size uint32) ([]byte, error) {
 	return resp, nil
 }
 
-func RequestPiecec(conn net.Conn, pieceIndex uint32, begin uint32, blockLength uint32) ([]byte, error) {
+func RequestPiece(conn net.Conn, pieceIndex uint32, begin uint32, blockLength uint32) ([]byte, error) {
 	msg := make([]byte, 17)
 	binary.BigEndian.PutUint32(msg[0:4], 13)
 	msg[4] = 6

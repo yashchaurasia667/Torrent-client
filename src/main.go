@@ -64,18 +64,16 @@ func main() {
 			continue
 		}
 
-		// available_peers = append(available_peers, c)
 		intr := peers.CheckInterested(c.Conn)
 		if intr {
 			fmt.Println(peer.Ip.String(), "has unchoked you. Now requesting a piece")
-			piece, err := download.DownloadPiece(c.Conn, c.Bitfield, downloaded, t.Info.PieceLength)
+			piece, err := download.DownloadPiece(c.Conn, c.Bitfield, downloaded, t.Info.PieceLength, t.Info.PieceHashes)
 			if err != nil {
 				fmt.Println("Error: ", err)
 				continue
 			}
-			fmt.Println("Downloaded a piece, piece length: ", len(piece))
 
-			// fmt.Println("Next downloadable index: ", index)
+			fmt.Println("Downloaded a piece, piece length: ", len(piece))
 		}
 	}
 }

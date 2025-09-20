@@ -1,9 +1,10 @@
 package download
 
 import (
+	"bytes"
 	"fmt"
-	"math"
 	"net"
+	"torrent-client/parser"
 	"torrent-client/peers"
 )
 
@@ -45,7 +46,7 @@ func getIndex(bitfield byte, downloaded byte) int {
 			return ind
 		}
 		// CHECK IF THAT BIT IS SET IN BITFIELD IF SO GET THE NEXT BIT THAT'S SET IN BITFIELD
-		changeBit := byte(math.Pow(2.0, float64(ind)))
+		changeBit := byte(1 << ind)
 		diff := (bitfield >> ind) & changeBit
 		if diff == 1 {
 			return ind
@@ -62,7 +63,7 @@ func GetNextDownloadablePiece(bitfield []byte, downloaded []byte) (int, int, err
 
 	var downloadIndex int = -1
 	var bitIndex int = 0
-	for i := range len(downloaded) {
+	for i := range downloaded {
 		if downloaded[i] == 255 {
 			continue
 		} else if downloaded[i] != bitfield[i] {
@@ -81,9 +82,11 @@ func GetNextDownloadablePiece(bitfield []byte, downloaded []byte) (int, int, err
 	return downloadIndex, bitIndex, nil
 }
 
-func DownloadPiece(conn net.Conn, bitfield []byte, downloaded []byte, pieceLength uint64) ([]byte, error) {
+func DownloadPiece(conn net.Conn, bitfield []byte, downloaded []byte, pieceLength uint64, piecesHash [][]byte) ([]byte, error) {
 	begin := uint32(0)
-	var piece []byte
+	// TODO: fix the piece size to be smaller for the last piece if needed
+	piece := make([]byte, pieceLength)
+
 	dIndex, bIndex, err := GetNextDownloadablePiece(bitfield, downloaded)
 	if err != nil {
 		return nil, err
@@ -91,17 +94,28 @@ func DownloadPiece(conn net.Conn, bitfield []byte, downloaded []byte, pieceLengt
 	pieceIndex := uint32(dIndex*8 + bIndex)
 
 	for {
-		block, err := peers.RequestPiecec(conn, pieceIndex, begin, BLOCK_SIZE)
+		block, err := peers.RequestPiece(conn, pieceIndex, begin, BLOCK_SIZE)
 		if err != nil {
 			return nil, err
 		}
-		// fmt.Println("Got a block! begin: ", begin)
 
-		piece = append(piece, block...)
+		copy(piece[begin:begin+BLOCK_SIZE], block[13:])
 		begin += BLOCK_SIZE
-		if begin >= uint32(pieceLength) {
+		if begin == uint32(pieceLength) {
 			break
 		}
+	}
+	fmt.Println("Downloaded piece index:", pieceIndex)
+	downloaded[dIndex] += byte(1 << bIndex)
+	fmt.Println(downloaded[dIndex])
+
+	// verify the downloaded piece
+	expected := piecesHash[pieceIndex]
+	computed := parser.GetSha1Hash(piece)
+
+	if !bytes.Equal(computed, expected) {
+		fmt.Println("expected ", expected, "got", computed)
+		return nil, fmt.Errorf("piece hash mismatch")
 	}
 
 	return piece, nil
