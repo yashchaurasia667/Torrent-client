@@ -24,7 +24,7 @@ type Torrent struct {
 type InfoDict struct {
 	Name        string
 	Length      int64
-	PieceLength int64
+	PieceLength uint64
 	Pieces      []byte
 	PieceHashes [][]byte
 	PieceCount  int
@@ -344,7 +344,7 @@ func (r *Reader) readInfo() (*InfoDict, error) {
 			}
 			// DEBUG
 			// fmt.Println("piece length ", i)
-			info.PieceLength = i
+			info.PieceLength = uint64(i)
 
 		case "pieces":
 			var piecesLen int64 = 0

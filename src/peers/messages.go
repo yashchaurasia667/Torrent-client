@@ -46,23 +46,41 @@ func AwaitResponse(conn net.Conn, size uint32) ([]byte, error) {
 	return resp, nil
 }
 
-func RequestPiece(conn net.Conn, pieceIndex uint32, begin uint32, length uint32) ([]byte, error) {
+func RequestPiecec(conn net.Conn, pieceIndex uint32, begin uint32, blockLength uint32) ([]byte, error) {
 	msg := make([]byte, 17)
 	binary.BigEndian.PutUint32(msg[0:4], 13)
 	msg[4] = 6
 	binary.BigEndian.PutUint32(msg[5:9], pieceIndex)
 	binary.BigEndian.PutUint32(msg[9:13], begin)
-	binary.BigEndian.PutUint32(msg[13:17], length)
+	binary.BigEndian.PutUint32(msg[13:17], blockLength)
 
 	_, err := conn.Write(msg)
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := AwaitResponse(conn, 13+length)
+	resp, err := AwaitResponse(conn, 13+blockLength)
 	if err != nil {
 		return nil, err
 	}
 
+	if err = SendHavePiece(conn, pieceIndex); err != nil {
+		return nil, err
+	}
+
 	return resp, nil
+}
+
+func SendHavePiece(conn net.Conn, pieceIndex uint32) error {
+	msg := make([]byte, 9)
+	binary.BigEndian.PutUint32(msg[0:4], 5)
+	msg[4] = 4
+	binary.BigEndian.PutUint32(msg[5:9], pieceIndex)
+
+	_, err := conn.Write(msg)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

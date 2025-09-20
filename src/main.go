@@ -56,6 +56,7 @@ func main() {
 		os.Exit(1)
 	}
 
+	fmt.Printf("Piece Length: %d, block size: %d\n", t.Info.PieceLength, download.BLOCK_SIZE)
 	for _, peer := range res.Peers {
 		c, err := peers.PerformHandshake(peer, t.InfoHash, []byte(peers.GetPeerId()))
 		if err != nil || c == nil {
@@ -67,14 +68,14 @@ func main() {
 		intr := peers.CheckInterested(c.Conn)
 		if intr {
 			fmt.Println(peer.Ip.String(), "has unchoked you. Now requesting a piece")
-			index, err := download.GetNextDownloadablePiece(c.Bitfield, downloaded)
+			piece, err := download.DownloadPiece(c.Conn, c.Bitfield, downloaded, t.Info.PieceLength)
 			if err != nil {
 				fmt.Println("Error: ", err)
 				continue
 			}
+			fmt.Println("Downloaded a piece, piece length: ", len(piece))
 
 			// fmt.Println("Next downloadable index: ", index)
-			peers.RequestPiece()
 		}
 	}
 }
