@@ -86,7 +86,7 @@ func GenerateTransactionId() uint32 {
 	return binary.BigEndian.Uint32(b[:])
 }
 
-func BuildTrackerUrl(trakerAddr string, infoHash []byte, totalLength int64, connection *HttpConnection) (string, error) {
+func BuildTrackerUrl(trakerAddr string, infoHash []byte, totalLength uint64, connection *HttpConnection) (string, error) {
 	u, err := url.Parse(trakerAddr)
 	if err != nil {
 		return "", err

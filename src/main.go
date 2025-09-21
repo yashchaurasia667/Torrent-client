@@ -21,10 +21,30 @@ func check(path string) {
 	}
 }
 
+func GetPeerAndDownload(peer parser.Peer, t *parser.Torrent, downloaded []byte) (uint32, []byte, error) {
+	c, err := peers.PerformHandshake(peer, t.InfoHash, []byte(peers.GetPeerId()))
+	if err != nil || c == nil {
+		return 0, nil, err
+	}
+
+	intr := peers.CheckInterested(c.Conn)
+	if !intr {
+		return 0, nil, fmt.Errorf("%s is not interested", peer.Ip.String())
+	}
+
+	fmt.Println(peer.Ip.String(), "has unchoked you. Now requesting a piece")
+	pieceIndex, piece, err := download.DownloadPiece(c.Conn, c.Bitfield, downloaded, t)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	fmt.Println("Downloaded a piece, piece length: ", len(piece))
+	return pieceIndex, piece, nil
+}
+
 func main() {
 	args := os.Args
 	var downloaded []byte
-	// var available_peers []*peers.ConnectedPeer
 
 	// Exit if no file path is passed
 	if len(args) < 2 {
@@ -33,8 +53,6 @@ func main() {
 	}
 	// check for file and path validity
 	check(args[1])
-	// [DEBUG]
-	// fmt.Println("ALL CHECKS PASSED...")
 
 	// Read file and Get decoded struct
 	data, err := os.ReadFile(args[1])
@@ -58,22 +76,10 @@ func main() {
 
 	fmt.Printf("Piece Length: %d, block size: %d\n", t.Info.PieceLength, download.BLOCK_SIZE)
 	for _, peer := range res.Peers {
-		c, err := peers.PerformHandshake(peer, t.InfoHash, []byte(peers.GetPeerId()))
-		if err != nil || c == nil {
-			// fmt.Println("Error: ", err)
+		_, piece, err := GetPeerAndDownload(peer, t, downloaded)
+		if err != nil || piece == nil {
+			fmt.Printf("Error: %s\n", err)
 			continue
-		}
-
-		intr := peers.CheckInterested(c.Conn)
-		if intr {
-			fmt.Println(peer.Ip.String(), "has unchoked you. Now requesting a piece")
-			piece, err := download.DownloadPiece(c.Conn, c.Bitfield, downloaded, t)
-			if err != nil {
-				fmt.Printf("Error: %s\n", err)
-				continue
-			}
-
-			fmt.Println("Downloaded a piece, piece length: ", len(piece))
 		}
 	}
 }
