@@ -67,10 +67,9 @@ func main() {
 		intr := peers.CheckInterested(c.Conn)
 		if intr {
 			fmt.Println(peer.Ip.String(), "has unchoked you. Now requesting a piece")
-			piece, err := download.DownloadPiece(c.Conn, c.Bitfield, downloaded, t.Info.PieceLength, t.Info.PieceHashes)
+			piece, err := download.DownloadPiece(c.Conn, c.Bitfield, downloaded, t)
 			if err != nil {
-				fmt.Println("Error: ", err)
-				fmt.Println()
+				fmt.Printf("Error: %s\n", err)
 				continue
 			}
 

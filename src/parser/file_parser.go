@@ -17,7 +17,7 @@ type Torrent struct {
 	Encoding     string
 	Info         InfoDict
 	InfoHash     []byte
-	TotalLength  int64
+	TotalLength  uint64
 	Magnet       string
 }
 
@@ -370,24 +370,13 @@ func (r *Reader) readInfo() (*InfoDict, error) {
 			// CALCULATE PIECE HASHES
 			info.PieceCount = int(piecesLen / 20)
 
-			// DEBUG
-			// fmt.Println("piece length ", info.PieceLength)
-			// fmt.Println("piece count ", info.PieceCount)
-
 			pieceHashes := make([][]byte, info.PieceCount)
 			for i := range info.PieceCount {
 				start := i * 20
 				end := start + 20
-
-				if end >= int(piecesLen) {
-					end = int(piecesLen) - 1
-				}
-
-				hash := GetSha1Hash(info.Pieces[start:end])
-				pieceHashes[i] = hash
+				pieceHashes[i] = info.Pieces[start:end]
 			}
 			info.PieceHashes = pieceHashes
-			// fmt.Println(pieceHashes)
 
 		case "private":
 			i, err := r.readInt()
@@ -522,7 +511,7 @@ func DecodeTorrent(data []byte) (*Torrent, error) {
 			// fmt.Println("hello default")
 		}
 
-		meta.TotalLength = meta.Info.Length
+		meta.TotalLength = uint64(meta.Info.Length)
 	}
 
 	return &meta, nil
