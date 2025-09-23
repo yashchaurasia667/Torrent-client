@@ -9,6 +9,12 @@ import (
 	"torrent-client/peers"
 )
 
+type DownloadResult struct {
+	pieceIndex uint32
+	piece      []byte
+	Err        error
+}
+
 func check(path string) {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		fmt.Fprintln(os.Stderr, "Invalid file path.")
@@ -21,30 +27,38 @@ func check(path string) {
 	}
 }
 
-func GetPeerAndDownload(peer parser.Peer, t *parser.Torrent, downloaded []byte) (uint32, []byte, error) {
-	c, err := peers.PerformHandshake(peer, t.InfoHash, []byte(peers.GetPeerId()))
+func GetPeerAndDownload(peer parser.Peer, t *parser.Torrent, downloaded []byte, peerId []byte) ([]DownloadResult, error) {
+	var pieces []DownloadResult
+	c, err := peers.PerformHandshake(peer, t.InfoHash, peerId)
 	if err != nil || c == nil {
-		return 0, nil, err
+		return nil, err
 	}
+	defer c.Conn.Close()
 
 	intr := peers.CheckInterested(c.Conn)
 	if !intr {
-		return 0, nil, fmt.Errorf("%s is not interested", peer.Ip.String())
+		c.Conn.Close()
+		return nil, fmt.Errorf("%s is not interested", peer.Ip.String())
 	}
 
-	fmt.Println(peer.Ip.String(), "has unchoked you. Now requesting a piece")
-	pieceIndex, piece, err := download.DownloadPiece(c.Conn, c.Bitfield, downloaded, t)
-	if err != nil {
-		return 0, nil, err
-	}
+	fmt.Printf("%s has unchoked you. Now requesting a piece\n", peer.Ip.String())
+	for {
+		pieceIndex, piece, err := download.DownloadPiece(c.Conn, c.Bitfield, downloaded, t)
+		if err != nil {
+			// return nil, err
+			break
+		}
+		pieces = append(pieces, DownloadResult{pieceIndex, piece, err})
 
-	fmt.Println("Downloaded a piece, piece length: ", len(piece))
-	return pieceIndex, piece, nil
+		fmt.Println("Downloaded a piece, piece length: ", len(piece))
+	}
+	return pieces, nil
 }
 
 func main() {
 	args := os.Args
 	var downloaded []byte
+	downloadResult := make(chan DownloadResult)
 
 	// Exit if no file path is passed
 	if len(args) < 2 {
@@ -73,13 +87,19 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+	peerId := peers.GetPeerId()
 
 	fmt.Printf("Piece Length: %d, block size: %d\n", t.Info.PieceLength, download.BLOCK_SIZE)
 	for _, peer := range res.Peers {
-		_, piece, err := GetPeerAndDownload(peer, t, downloaded)
-		if err != nil || piece == nil {
-			fmt.Printf("Error: %s\n", err)
-			continue
-		}
+		go func(p parser.Peer) {
+			downloadedPieces, err := GetPeerAndDownload(p, t, downloaded, []byte(peerId))
+			if err != nil || downloadedPieces == nil {
+				fmt.Printf("Error: %s\n", err)
+				return
+			}
+			for _, piece := range downloadedPieces {
+				downloadResult <- piece
+			}
+		}(peer)
 	}
 }

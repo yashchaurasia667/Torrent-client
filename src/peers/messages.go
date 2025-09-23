@@ -70,6 +70,7 @@ func RequestPiece(conn net.Conn, pieceIndex uint32, begin uint32, blockLength ui
 	expectedLen := make([]byte, 4)
 	binary.BigEndian.PutUint32(expectedLen, blockLength+9)
 	if !bytes.Equal(expectedLen, resp[0:4]) {
+		fmt.Println(resp)
 		return nil, fmt.Errorf("expected length %d got %d", blockLength+9, binary.BigEndian.Uint32(resp[0:4]))
 	}
 
