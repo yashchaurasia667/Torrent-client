@@ -10,6 +10,11 @@ import (
 
 const BLOCK_SIZE uint32 = 16384 // 16 kib
 
+type DownloadedBit struct {
+	value       byte
+	downloading byte
+}
+
 func GetFirstEnabledBit(a byte) int {
 	index := 7
 	for {
@@ -56,7 +61,7 @@ func getIndex(bitfield byte, downloaded byte) int {
 	}
 }
 
-func GetNextDownloadablePiece(bitfield []byte, downloaded []byte) (int, int, error) {
+func GetNextDownloadablePiece(bitfield []byte, downloaded []DownloadedBit) (int, int, error) {
 	if len(bitfield) != len(downloaded) {
 		return 0, 0, fmt.Errorf("piece count received from peer is not same as parsed count. expected %d got %d", len(downloaded), len(bitfield))
 	}
@@ -64,10 +69,10 @@ func GetNextDownloadablePiece(bitfield []byte, downloaded []byte) (int, int, err
 	var downloadIndex int = -1
 	var bitIndex int = 0
 	for i := range downloaded {
-		if downloaded[i] == 255 {
+		if downloaded[i].value == 255 {
 			continue
-		} else if downloaded[i] != bitfield[i] {
-			bitIndex = getIndex(bitfield[i], downloaded[i])
+		} else if downloaded[i].value != bitfield[i] {
+			bitIndex = getIndex(bitfield[i], downloaded[i].value)
 			if bitIndex != -1 {
 				downloadIndex = i
 				break
@@ -82,12 +87,24 @@ func GetNextDownloadablePiece(bitfield []byte, downloaded []byte) (int, int, err
 	return downloadIndex, bitIndex, nil
 }
 
-func DownloadPiece(conn net.Conn, bitfield []byte, downloaded []byte, t *parser.Torrent) (uint32, []byte, error) {
+func DownloadPiece(conn net.Conn, bitfield []byte, downloaded []DownloadedBit, t *parser.Torrent) (uint32, []byte, error) {
 	dIndex, bIndex, err := GetNextDownloadablePiece(bitfield, downloaded)
 	if err != nil {
 		return 0, nil, err
 	}
 	pieceIndex := uint32(dIndex*8 + bIndex)
+
+	for {
+		if downloaded[dIndex].downloading&byte(1<<(7-bIndex)) != 1 {
+			break
+		}
+		dIndex, bIndex, err = GetNextDownloadablePiece(bitfield, downloaded)
+		if err != nil {
+			return 0, nil, err
+		}
+	}
+
+	downloaded[dIndex].downloading += byte(1 << (7 - bIndex))
 
 	pieceLen := t.Info.PieceLength
 	if pieceIndex == uint32(t.Info.PieceCount) && t.TotalLength%t.Info.PieceLength != 0 {
@@ -117,6 +134,7 @@ func DownloadPiece(conn net.Conn, bitfield []byte, downloaded []byte, t *parser.
 	}
 
 	fmt.Println("Downloaded piece index:", pieceIndex)
-	downloaded[dIndex] += byte(1 << (7 - bIndex))
+	downloaded[dIndex].value += byte(1 << (7 - bIndex))
+	downloaded[dIndex].downloading -= byte(1 << (7 - bIndex))
 	return pieceIndex, piece, nil
 }

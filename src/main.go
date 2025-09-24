@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"torrent-client/download"
 	"torrent-client/parser"
 	"torrent-client/peers"
@@ -27,7 +28,7 @@ func check(path string) {
 	}
 }
 
-func GetPeerAndDownload(peer parser.Peer, t *parser.Torrent, downloaded []byte, peerId []byte) ([]DownloadResult, error) {
+func GetPeerAndDownload(peer parser.Peer, t *parser.Torrent, downloaded []download.DownloadedBit, peerId []byte, wg *sync.WaitGroup) ([]DownloadResult, error) {
 	var pieces []DownloadResult
 	c, err := peers.PerformHandshake(peer, t.InfoHash, peerId)
 	if err != nil || c == nil {
@@ -52,12 +53,14 @@ func GetPeerAndDownload(peer parser.Peer, t *parser.Torrent, downloaded []byte, 
 
 		fmt.Println("Downloaded a piece, piece length: ", len(piece))
 	}
+	wg.Done()
 	return pieces, nil
 }
 
 func main() {
 	args := os.Args
-	var downloaded []byte
+	var wg sync.WaitGroup
+	var downloaded []download.DownloadedBit
 	downloadResult := make(chan DownloadResult)
 
 	// Exit if no file path is passed
@@ -80,7 +83,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "Error while reading torrent file: ", err)
 		os.Exit(1)
 	}
-	downloaded = make([]byte, t.Info.PieceCount/8)
+	downloaded = make([]download.DownloadedBit, t.Info.PieceCount/8)
 
 	res, err := peers.RequestTracker(t)
 	if err != nil {
@@ -91,8 +94,9 @@ func main() {
 
 	fmt.Printf("Piece Length: %d, block size: %d\n", t.Info.PieceLength, download.BLOCK_SIZE)
 	for _, peer := range res.Peers {
+		wg.Add(1)
 		go func(p parser.Peer) {
-			downloadedPieces, err := GetPeerAndDownload(p, t, downloaded, []byte(peerId))
+			downloadedPieces, err := GetPeerAndDownload(p, t, downloaded, []byte(peerId), &wg)
 			if err != nil || downloadedPieces == nil {
 				fmt.Printf("Error: %s\n", err)
 				return
@@ -102,4 +106,5 @@ func main() {
 			}
 		}(peer)
 	}
+	wg.Wait()
 }
