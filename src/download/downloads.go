@@ -10,11 +10,6 @@ import (
 
 const BLOCK_SIZE uint32 = 16384 // 16 kib
 
-type DownloadedBit struct {
-	value       byte
-	downloading byte
-}
-
 func GetFirstEnabledBit(a byte) int {
 	index := 7
 	for {
@@ -61,7 +56,7 @@ func getIndex(bitfield byte, downloaded byte) int {
 	}
 }
 
-func GetNextDownloadablePiece(bitfield []byte, downloaded []DownloadedBit) (int, int, error) {
+func GetNextDownloadablePiece(bitfield []byte, downloaded []byte) (int, int, error) {
 	if len(bitfield) != len(downloaded) {
 		return 0, 0, fmt.Errorf("piece count received from peer is not same as parsed count. expected %d got %d", len(downloaded), len(bitfield))
 	}
@@ -69,10 +64,10 @@ func GetNextDownloadablePiece(bitfield []byte, downloaded []DownloadedBit) (int,
 	var downloadIndex int = -1
 	var bitIndex int = 0
 	for i := range downloaded {
-		if downloaded[i].value == 255 {
+		if downloaded[i] == 255 {
 			continue
-		} else if downloaded[i].value != bitfield[i] {
-			bitIndex = getIndex(bitfield[i], downloaded[i].value)
+		} else if downloaded[i] != bitfield[i] {
+			bitIndex = getIndex(bitfield[i], downloaded[i])
 			if bitIndex != -1 {
 				downloadIndex = i
 				break
@@ -87,25 +82,7 @@ func GetNextDownloadablePiece(bitfield []byte, downloaded []DownloadedBit) (int,
 	return downloadIndex, bitIndex, nil
 }
 
-func DownloadPiece(conn net.Conn, bitfield []byte, downloaded []DownloadedBit, t *parser.Torrent) (uint32, []byte, error) {
-	dIndex, bIndex, err := GetNextDownloadablePiece(bitfield, downloaded)
-	if err != nil {
-		return 0, nil, err
-	}
-	pieceIndex := uint32(dIndex*8 + bIndex)
-
-	for {
-		if downloaded[dIndex].downloading&byte(1<<(7-bIndex)) != 1 {
-			break
-		}
-		dIndex, bIndex, err = GetNextDownloadablePiece(bitfield, downloaded)
-		if err != nil {
-			return 0, nil, err
-		}
-	}
-
-	downloaded[dIndex].downloading += byte(1 << (7 - bIndex))
-
+func DownloadPiece(conn net.Conn, bitfield []byte, t *parser.Torrent, pieceIndex uint32) ([]byte, error) {
 	pieceLen := t.Info.PieceLength
 	if pieceIndex == uint32(t.Info.PieceCount) && t.TotalLength%t.Info.PieceLength != 0 {
 		fmt.Println("Last piece is smaller than the rest")
@@ -117,7 +94,7 @@ func DownloadPiece(conn net.Conn, bitfield []byte, downloaded []DownloadedBit, t
 	for {
 		block, err := peers.RequestPiece(conn, pieceIndex, begin, BLOCK_SIZE)
 		if err != nil {
-			return 0, nil, err
+			return nil, err
 		}
 		copy(piece[begin:begin+BLOCK_SIZE], block[13:])
 		begin += BLOCK_SIZE
@@ -130,11 +107,9 @@ func DownloadPiece(conn net.Conn, bitfield []byte, downloaded []DownloadedBit, t
 	expected := t.Info.PieceHashes[pieceIndex]
 	computed := parser.GetSha1Hash(piece)
 	if !bytes.Equal(computed, expected) {
-		return 0, nil, fmt.Errorf("expected %x, got %x", expected, computed)
+		return nil, fmt.Errorf("expected %x, got %x", expected, computed)
 	}
 
-	fmt.Println("Downloaded piece index:", pieceIndex)
-	downloaded[dIndex].value += byte(1 << (7 - bIndex))
-	downloaded[dIndex].downloading -= byte(1 << (7 - bIndex))
-	return pieceIndex, piece, nil
+	// fmt.Println("Downloaded piece index:", pieceIndex)
+	return piece, nil
 }

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"sync"
 	"torrent-client/download"
 	"torrent-client/parser"
 	"torrent-client/peers"
@@ -28,7 +27,7 @@ func check(path string) {
 	}
 }
 
-func GetPeerAndDownload(peer parser.Peer, t *parser.Torrent, downloaded []download.DownloadedBit, peerId []byte, wg *sync.WaitGroup) ([]DownloadResult, error) {
+func GetPeerAndDownload(peer parser.Peer, t *parser.Torrent, downloaded []byte, peerId []byte) ([]DownloadResult, error) {
 	var pieces []DownloadResult
 	c, err := peers.PerformHandshake(peer, t.InfoHash, peerId)
 	if err != nil || c == nil {
@@ -41,27 +40,37 @@ func GetPeerAndDownload(peer parser.Peer, t *parser.Torrent, downloaded []downlo
 		c.Conn.Close()
 		return nil, fmt.Errorf("%s is not interested", peer.Ip.String())
 	}
-
 	fmt.Printf("%s has unchoked you. Now requesting a piece\n", peer.Ip.String())
+
 	for {
-		pieceIndex, piece, err := download.DownloadPiece(c.Conn, c.Bitfield, downloaded, t)
+		dIndex, bIndex, err := download.GetNextDownloadablePiece(c.Bitfield, downloaded)
 		if err != nil {
-			// return nil, err
+			return nil, err
+		}
+		pieceIndex := uint32(dIndex*8 + bIndex)
+
+		piece, err := download.DownloadPiece(c.Conn, c.Bitfield, t, pieceIndex)
+		if err != nil {
 			break
 		}
+		downloaded[dIndex] += byte(1 << (7 - bIndex))
+		fmt.Printf("Downloaded piece index %d from peer %s\n", pieceIndex, peer.Ip.String())
 		pieces = append(pieces, DownloadResult{pieceIndex, piece, err})
 
-		fmt.Println("Downloaded a piece, piece length: ", len(piece))
+		pathList := [2]string{"..", "out"}
+		err = download.WritePiece(pieceIndex, piece, pathList[:])
+		if err != nil {
+			return nil, err
+		}
 	}
-	wg.Done()
 	return pieces, nil
 }
 
+// TODO: create either a central scheduler or a mutex for locking
+
 func main() {
 	args := os.Args
-	var wg sync.WaitGroup
-	var downloaded []download.DownloadedBit
-	downloadResult := make(chan DownloadResult)
+	var downloaded []byte
 
 	// Exit if no file path is passed
 	if len(args) < 2 {
@@ -83,8 +92,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "Error while reading torrent file: ", err)
 		os.Exit(1)
 	}
-	downloaded = make([]download.DownloadedBit, t.Info.PieceCount/8)
-
+	downloaded = make([]byte, t.Info.PieceCount/8)
 	res, err := peers.RequestTracker(t)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -94,17 +102,10 @@ func main() {
 
 	fmt.Printf("Piece Length: %d, block size: %d\n", t.Info.PieceLength, download.BLOCK_SIZE)
 	for _, peer := range res.Peers {
-		wg.Add(1)
-		go func(p parser.Peer) {
-			downloadedPieces, err := GetPeerAndDownload(p, t, downloaded, []byte(peerId), &wg)
-			if err != nil || downloadedPieces == nil {
-				fmt.Printf("Error: %s\n", err)
-				return
-			}
-			for _, piece := range downloadedPieces {
-				downloadResult <- piece
-			}
-		}(peer)
+		_, err := GetPeerAndDownload(peer, t, downloaded, []byte(peerId))
+		if err != nil {
+			fmt.Printf("Error: %s\n", err)
+			continue
+		}
 	}
-	wg.Wait()
 }
