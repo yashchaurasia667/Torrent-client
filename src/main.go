@@ -4,10 +4,13 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"torrent-client/download"
 	"torrent-client/parser"
 	"torrent-client/peers"
 )
+
+const CONCURRENT_DONWLOADS = 10
 
 type DownloadResult struct {
 	pieceIndex uint32
@@ -27,7 +30,18 @@ func check(path string) {
 	}
 }
 
-func GetPeerAndDownload(peer parser.Peer, t *parser.Torrent, downloaded []byte, peerId []byte) ([]DownloadResult, error) {
+/*
+This function will be called asynchrousnously
+
+Args=>
+peer: struct containing info about peer that the tracker sent (IP, Port)
+t: struct containing parsed torrent information
+downloaded: slice containing info about all the pieces that have been downloaded
+downloading: channel containing info about all the pieces that are currently downloading
+wg: waitgroup to create a joining point to the main function
+*/
+
+func GetPeerAndDownload(peer parser.Peer, t *parser.Torrent, downloaded []byte, peerId []byte, downloading chan uint32, wg *sync.WaitGroup) ([]DownloadResult, error) {
 	var pieces []DownloadResult
 	c, err := peers.PerformHandshake(peer, t.InfoHash, peerId)
 	if err != nil || c == nil {
@@ -48,12 +62,13 @@ func GetPeerAndDownload(peer parser.Peer, t *parser.Torrent, downloaded []byte, 
 			return nil, err
 		}
 		pieceIndex := uint32(dIndex*8 + bIndex)
+		downloaded[dIndex] += byte(1 << (7 - bIndex))
 
 		piece, err := download.DownloadPiece(c.Conn, c.Bitfield, t, pieceIndex)
 		if err != nil {
+			downloaded[dIndex] -= byte(1 << (7 - bIndex))
 			break
 		}
-		downloaded[dIndex] += byte(1 << (7 - bIndex))
 		fmt.Printf("Downloaded piece index %d from peer %s\n", pieceIndex, peer.Ip.String())
 		pieces = append(pieces, DownloadResult{pieceIndex, piece, err})
 
@@ -63,6 +78,7 @@ func GetPeerAndDownload(peer parser.Peer, t *parser.Torrent, downloaded []byte, 
 			return nil, err
 		}
 	}
+	wg.Done()
 	return pieces, nil
 }
 
@@ -71,6 +87,8 @@ func GetPeerAndDownload(peer parser.Peer, t *parser.Torrent, downloaded []byte, 
 func main() {
 	args := os.Args
 	var downloaded []byte
+	var wg sync.WaitGroup
+	downloading := make(chan uint32, CONCURRENT_DONWLOADS)
 
 	// Exit if no file path is passed
 	if len(args) < 2 {
@@ -102,10 +120,14 @@ func main() {
 
 	fmt.Printf("Piece Length: %d, block size: %d\n", t.Info.PieceLength, download.BLOCK_SIZE)
 	for _, peer := range res.Peers {
-		_, err := GetPeerAndDownload(peer, t, downloaded, []byte(peerId))
-		if err != nil {
-			fmt.Printf("Error: %s\n", err)
-			continue
-		}
+		wg.Add(1)
+		func(p parser.Peer) {
+			_, err := GetPeerAndDownload(p, t, downloaded, []byte(peerId), downloading, &wg)
+			if err != nil {
+				fmt.Printf("Error: %s\n", err)
+				return
+			}
+		}(peer)
 	}
+	wg.Wait()
 }
