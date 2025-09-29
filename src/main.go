@@ -86,7 +86,7 @@ downloading: channel containing info about all the pieces that are currently dow
 wg: waitgroup to create a joining point to the main function
 */
 
-func GetPeerAndDownload(peer parser.Peer, t *parser.Torrent, downloaded []byte, peerId []byte, downloading DownloadingSet, wg *sync.WaitGroup) ([]DownloadResult, error) {
+func GetPeerAndDownload(peer parser.Peer, t *parser.Torrent, downloaded []byte, peerId []byte, downloading *DownloadingSet, wg *sync.WaitGroup) ([]DownloadResult, error) {
 	var pieces []DownloadResult
 	c, err := peers.PerformHandshake(peer, t.InfoHash, peerId)
 	if err != nil || c == nil {
@@ -105,7 +105,7 @@ func GetPeerAndDownload(peer parser.Peer, t *parser.Torrent, downloaded []byte, 
 	// download all the available pieces that peer offers
 	for {
 		tmp := append([]byte(nil), downloaded...)
-		dIndex, bIndex, pieceIndex, err := getNextPieceIndex(tmp, c.Bitfield, &downloading)
+		dIndex, bIndex, pieceIndex, err := getNextPieceIndex(tmp, c.Bitfield, downloading)
 		if err != nil {
 			return nil, err
 		}
@@ -130,13 +130,12 @@ func GetPeerAndDownload(peer parser.Peer, t *parser.Torrent, downloaded []byte, 
 	return pieces, nil
 }
 
-// TODO: create either a central scheduler or a mutex for locking
-
 func main() {
 	args := os.Args
 	var downloaded []byte
 	var wg sync.WaitGroup
 	downloading := newDownloadingSet()
+	threadLimit := make(chan struct{}, CONCURRENT_DONWLOADS)
 
 	// Exit if no file path is passed
 	if len(args) < 2 {
@@ -169,7 +168,11 @@ func main() {
 	fmt.Printf("Piece Length: %d, block size: %d\n", t.Info.PieceLength, download.BLOCK_SIZE)
 	for _, peer := range res.Peers {
 		wg.Add(1)
+		threadLimit <- struct{}{}
 		go func(p parser.Peer) {
+			defer func() {
+				<-threadLimit
+			}()
 			_, err := GetPeerAndDownload(p, t, downloaded, []byte(peerId), downloading, &wg)
 			if err != nil {
 				fmt.Printf("Error: %s\n", err)
