@@ -12,10 +12,38 @@ import (
 
 const CONCURRENT_DONWLOADS = 10
 
+type DownloadingSet struct {
+	mu sync.RWMutex
+	m  map[uint32]struct{}
+}
+
 type DownloadResult struct {
 	pieceIndex uint32
 	piece      []byte
 	Err        error
+}
+
+func newDownloadingSet() *DownloadingSet {
+	return &DownloadingSet{m: make(map[uint32]struct{})}
+}
+
+func (s *DownloadingSet) add(idx uint32) {
+	s.mu.Lock()
+	s.m[idx] = struct{}{}
+	s.mu.Unlock()
+}
+
+func (s *DownloadingSet) remove(idx uint32) {
+	s.mu.Lock()
+	delete(s.m, idx)
+	s.mu.Unlock()
+}
+
+func (s *DownloadingSet) contains(idx uint32) bool {
+	s.mu.Lock()
+	_, ok := s.m[idx]
+	s.mu.Unlock()
+	return ok
 }
 
 func check(path string) {
@@ -30,6 +58,23 @@ func check(path string) {
 	}
 }
 
+func getNextPieceIndex(downloaded []byte, bitField []byte, downloading *DownloadingSet) (int, int, uint32, error) {
+	for {
+		dIndex, bIndex, err := download.GetNextDownloadablePiece(bitField, downloaded)
+		if err != nil {
+			return 0, 0, 0, err
+		}
+		pieceIndex := uint32(dIndex*8 + bIndex)
+
+		if downloading.contains(pieceIndex) {
+			downloaded[dIndex] += byte(1 << (7 - bIndex))
+			continue
+		}
+
+		return dIndex, bIndex, pieceIndex, nil
+	}
+}
+
 /*
 This function will be called asynchrousnously
 
@@ -41,13 +86,14 @@ downloading: channel containing info about all the pieces that are currently dow
 wg: waitgroup to create a joining point to the main function
 */
 
-func GetPeerAndDownload(peer parser.Peer, t *parser.Torrent, downloaded []byte, peerId []byte, downloading chan uint32, wg *sync.WaitGroup) ([]DownloadResult, error) {
+func GetPeerAndDownload(peer parser.Peer, t *parser.Torrent, downloaded []byte, peerId []byte, downloading DownloadingSet, wg *sync.WaitGroup) ([]DownloadResult, error) {
 	var pieces []DownloadResult
 	c, err := peers.PerformHandshake(peer, t.InfoHash, peerId)
 	if err != nil || c == nil {
 		return nil, err
 	}
 	defer c.Conn.Close()
+	defer wg.Done()
 
 	intr := peers.CheckInterested(c.Conn)
 	if !intr {
@@ -56,13 +102,15 @@ func GetPeerAndDownload(peer parser.Peer, t *parser.Torrent, downloaded []byte, 
 	}
 	fmt.Printf("%s has unchoked you. Now requesting a piece\n", peer.Ip.String())
 
+	// download all the available pieces that peer offers
 	for {
-		dIndex, bIndex, err := download.GetNextDownloadablePiece(c.Bitfield, downloaded)
+		tmp := append([]byte(nil), downloaded...)
+		dIndex, bIndex, pieceIndex, err := getNextPieceIndex(tmp, c.Bitfield, &downloading)
 		if err != nil {
 			return nil, err
 		}
-		pieceIndex := uint32(dIndex*8 + bIndex)
 		downloaded[dIndex] += byte(1 << (7 - bIndex))
+		downloading.add(pieceIndex)
 
 		piece, err := download.DownloadPiece(c.Conn, c.Bitfield, t, pieceIndex)
 		if err != nil {
@@ -71,6 +119,7 @@ func GetPeerAndDownload(peer parser.Peer, t *parser.Torrent, downloaded []byte, 
 		}
 		fmt.Printf("Downloaded piece index %d from peer %s\n", pieceIndex, peer.Ip.String())
 		pieces = append(pieces, DownloadResult{pieceIndex, piece, err})
+		downloading.remove(pieceIndex)
 
 		pathList := [2]string{"..", "out"}
 		err = download.WritePiece(pieceIndex, piece, pathList[:])
@@ -78,7 +127,6 @@ func GetPeerAndDownload(peer parser.Peer, t *parser.Torrent, downloaded []byte, 
 			return nil, err
 		}
 	}
-	wg.Done()
 	return pieces, nil
 }
 
@@ -88,7 +136,7 @@ func main() {
 	args := os.Args
 	var downloaded []byte
 	var wg sync.WaitGroup
-	downloading := make(chan uint32, CONCURRENT_DONWLOADS)
+	downloading := newDownloadingSet()
 
 	// Exit if no file path is passed
 	if len(args) < 2 {
@@ -121,7 +169,7 @@ func main() {
 	fmt.Printf("Piece Length: %d, block size: %d\n", t.Info.PieceLength, download.BLOCK_SIZE)
 	for _, peer := range res.Peers {
 		wg.Add(1)
-		func(p parser.Peer) {
+		go func(p parser.Peer) {
 			_, err := GetPeerAndDownload(p, t, downloaded, []byte(peerId), downloading, &wg)
 			if err != nil {
 				fmt.Printf("Error: %s\n", err)
