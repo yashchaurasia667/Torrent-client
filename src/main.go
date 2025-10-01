@@ -8,42 +8,10 @@ import (
 	"torrent-client/download"
 	"torrent-client/parser"
 	"torrent-client/peers"
+	"torrent-client/utils"
 )
 
 const CONCURRENT_DONWLOADS = 10
-
-type DownloadingSet struct {
-	mu sync.RWMutex
-	m  map[uint32]struct{}
-}
-
-type DownloadResult struct {
-	dIndex int
-	bIndex int
-}
-
-func newDownloadingSet() *DownloadingSet {
-	return &DownloadingSet{m: make(map[uint32]struct{})}
-}
-
-func (s *DownloadingSet) add(idx uint32) {
-	s.mu.Lock()
-	s.m[idx] = struct{}{}
-	s.mu.Unlock()
-}
-
-func (s *DownloadingSet) remove(idx uint32) {
-	s.mu.Lock()
-	delete(s.m, idx)
-	s.mu.Unlock()
-}
-
-func (s *DownloadingSet) contains(idx uint32) bool {
-	s.mu.Lock()
-	_, ok := s.m[idx]
-	s.mu.Unlock()
-	return ok
-}
 
 func check(path string) {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
@@ -57,14 +25,14 @@ func check(path string) {
 	}
 }
 
-func getNextPieceIndex(downloaded []byte, bitField []byte, downloading *DownloadingSet) (int, int, uint32, error) {
+func getNextPieceIndex(downloaded []byte, bitField []byte, downloading *utils.DownloadingSet) (int, int, uint32, error) {
 	for {
 		dIndex, bIndex, err := download.GetNextDownloadablePiece(bitField, downloaded)
 		if err != nil {
 			return 0, 0, 0, err
 		}
 		pieceIndex := uint32(dIndex*8 + bIndex)
-		if downloading.contains(pieceIndex) {
+		if downloading.Contains(pieceIndex) {
 			downloaded[dIndex] += byte(1 << (7 - bIndex))
 			continue
 		}
@@ -83,8 +51,8 @@ downloading: channel containing info about all the pieces that are currently dow
 wg: waitgroup to create a joining point to the main function
 */
 
-func GetPeerAndDownload(peer parser.Peer, t *parser.Torrent, downloaded []byte, peerId []byte, downloading *DownloadingSet, wg *sync.WaitGroup) ([]DownloadResult, error) {
-	var pieces []DownloadResult
+func GetPeerAndDownload(peer parser.Peer, t *parser.Torrent, downloaded *utils.Downloaded, peerId []byte, downloading *utils.DownloadingSet, wg *sync.WaitGroup) ([]utils.DownloadResult, error) {
+	var pieces []utils.DownloadResult
 	c, err := peers.PerformHandshake(peer, t.InfoHash, peerId)
 	if err != nil || c == nil {
 		return nil, err
@@ -101,27 +69,30 @@ func GetPeerAndDownload(peer parser.Peer, t *parser.Torrent, downloaded []byte, 
 
 	// download all the available pieces that peer offers
 	for {
-		tmp := append([]byte(nil), downloaded...)
+		tmp := append([]byte(nil), downloaded.GetContent()...)
 		dIndex, bIndex, pieceIndex, err := getNextPieceIndex(tmp, c.Bitfield, downloading)
 		if err != nil {
 			return nil, err
 		}
-		downloaded[dIndex] += byte(1 << (7 - bIndex))
-		downloading.add(pieceIndex)
+		// downloaded[dIndex] += byte(1 << (7 - bIndex))
+		downloaded.Add(dIndex, bIndex)
+		downloading.Add(pieceIndex)
 
 		piece, err := download.DownloadPiece(c.Conn, c.Bitfield, t, pieceIndex)
 		if err != nil {
-			downloaded[dIndex] -= byte(1 << (7 - bIndex))
+			// downloaded[dIndex] -= byte(1 << (7 - bIndex))
+			downloaded.Remove(dIndex, bIndex)
 			break
 		}
 		fmt.Printf("Downloaded piece index %d from peer %s\n", pieceIndex, peer.Ip.String())
-		pieces = append(pieces, DownloadResult{dIndex, bIndex})
-		downloading.remove(pieceIndex)
+		pieces = append(pieces, utils.DownloadResult{DIndex: dIndex, BIndex: bIndex})
+		downloading.Remove(pieceIndex)
 
 		pathList := [2]string{"..", "out"}
 		err = download.WritePiece(pieceIndex, piece, pathList[:])
 		if err != nil {
-			downloaded[dIndex] -= byte(1 << (7 - bIndex))
+			// downloaded[dIndex] -= byte(1 << (7 - bIndex))
+			downloaded.Remove(dIndex, bIndex)
 			return nil, err
 		}
 	}
@@ -130,9 +101,8 @@ func GetPeerAndDownload(peer parser.Peer, t *parser.Torrent, downloaded []byte, 
 
 func main() {
 	args := os.Args
-	var downloaded []byte
 	var wg sync.WaitGroup
-	downloading := newDownloadingSet()
+	downloading := utils.NewDownloadingSet()
 	threadLimit := make(chan struct{}, CONCURRENT_DONWLOADS)
 
 	// Exit if no file path is passed
@@ -156,9 +126,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	downloaded = make([]byte, t.Info.PieceCount/8)
+	downloaded := utils.NewDownloaded(t.Info.PieceCount / 8)
 	for {
-		download_complete := true
 		// 1. get peers from traker
 		res, err := peers.RequestTracker(t)
 		if err != nil {
@@ -180,22 +149,16 @@ func main() {
 				// 4. download the piece
 				_, err := GetPeerAndDownload(p, t, downloaded, []byte(peerId), downloading, &wg)
 				if err != nil {
-					// fmt.Printf("Error: %s\n", err)
+					fmt.Printf("Error: %s\n", err)
 					return
 				}
 			}(peer)
 		}
 		// 5. after you've gone through all the peers but you still dont have all the pieces repeat all the steps again
-		for _, i := range downloaded {
-			if i != 255 {
-				download_complete = false
-				break
-			}
-		}
-
-		if download_complete {
+		if downloaded.GetPieceCount() == t.Info.PieceCount {
 			break
 		}
+
 		wg.Wait()
 	}
 }
