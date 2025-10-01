@@ -18,9 +18,8 @@ type DownloadingSet struct {
 }
 
 type DownloadResult struct {
-	pieceIndex uint32
-	piece      []byte
-	Err        error
+	dIndex int
+	bIndex int
 }
 
 func newDownloadingSet() *DownloadingSet {
@@ -65,12 +64,10 @@ func getNextPieceIndex(downloaded []byte, bitField []byte, downloading *Download
 			return 0, 0, 0, err
 		}
 		pieceIndex := uint32(dIndex*8 + bIndex)
-
 		if downloading.contains(pieceIndex) {
 			downloaded[dIndex] += byte(1 << (7 - bIndex))
 			continue
 		}
-
 		return dIndex, bIndex, pieceIndex, nil
 	}
 }
@@ -118,12 +115,13 @@ func GetPeerAndDownload(peer parser.Peer, t *parser.Torrent, downloaded []byte, 
 			break
 		}
 		fmt.Printf("Downloaded piece index %d from peer %s\n", pieceIndex, peer.Ip.String())
-		pieces = append(pieces, DownloadResult{pieceIndex, piece, err})
+		pieces = append(pieces, DownloadResult{dIndex, bIndex})
 		downloading.remove(pieceIndex)
 
 		pathList := [2]string{"..", "out"}
 		err = download.WritePiece(pieceIndex, piece, pathList[:])
 		if err != nil {
+			downloaded[dIndex] -= byte(1 << (7 - bIndex))
 			return nil, err
 		}
 	}
@@ -157,28 +155,47 @@ func main() {
 		fmt.Fprintln(os.Stderr, "Error while reading torrent file: ", err)
 		os.Exit(1)
 	}
-	downloaded = make([]byte, t.Info.PieceCount/8)
-	res, err := peers.RequestTracker(t)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-	peerId := peers.GetPeerId()
 
-	fmt.Printf("Piece Length: %d, block size: %d\n", t.Info.PieceLength, download.BLOCK_SIZE)
-	for _, peer := range res.Peers {
-		wg.Add(1)
-		threadLimit <- struct{}{}
-		go func(p parser.Peer) {
-			defer func() {
-				<-threadLimit
-			}()
-			_, err := GetPeerAndDownload(p, t, downloaded, []byte(peerId), downloading, &wg)
-			if err != nil {
-				fmt.Printf("Error: %s\n", err)
-				return
+	downloaded = make([]byte, t.Info.PieceCount/8)
+	for {
+		download_complete := true
+		// 1. get peers from traker
+		res, err := peers.RequestTracker(t)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		peerId := peers.GetPeerId()
+		fmt.Printf("Piece Length: %d, block size: %d\n", t.Info.PieceLength, download.BLOCK_SIZE)
+
+		// 2. send interested to all the peers and wait for unchoke
+		// 3. when unchoked get the bitfield and get next downloadable piece
+		for _, peer := range res.Peers {
+			wg.Add(1)
+			threadLimit <- struct{}{}
+			go func(p parser.Peer) {
+				defer func() {
+					<-threadLimit
+				}()
+				// 4. download the piece
+				_, err := GetPeerAndDownload(p, t, downloaded, []byte(peerId), downloading, &wg)
+				if err != nil {
+					// fmt.Printf("Error: %s\n", err)
+					return
+				}
+			}(peer)
+		}
+		// 5. after you've gone through all the peers but you still dont have all the pieces repeat all the steps again
+		for _, i := range downloaded {
+			if i != 255 {
+				download_complete = false
+				break
 			}
-		}(peer)
+		}
+
+		if download_complete {
+			break
+		}
+		wg.Wait()
 	}
-	wg.Wait()
 }
