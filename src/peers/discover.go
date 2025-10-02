@@ -15,7 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"torrent-client/parser"
+	"torrent-client/src/parser"
 )
 
 const PORT = 6881

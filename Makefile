@@ -3,6 +3,7 @@ CFLAGS := -Wall -Wextra -O2 -Iinclude
 
 GO := go
 GO_SRC := ./src
+GO_OUT := ./out
 
 # Directories
 SRC_DIR := ./src/parser
@@ -39,7 +40,10 @@ parser: $(TARGET)
 .PHONY: all clean
 
 go-build: $(GO_SRC) | $(BIN_DIR)
-	$(GO) build  -o ./$(BIN_DIR) $(GO_SRC)
+	$(GO) -o ./$(BIN_DIR) $(GO_SRC)
+
+run: $(GO_SRC)
+	$(GO) run $(GO_SRC)/main.go $(GO_SRC)/test_files/multiple_files.torrent $(GO_OUT)
 
 torrent-client: go-build
 	./$(BIN_DIR)/torrent-client

@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"fmt"
 	"net"
-	"torrent-client/parser"
-	"torrent-client/peers"
+	"torrent-client/src/parser"
+	"torrent-client/src/peers"
 )
 
 const BLOCK_SIZE uint32 = 16384 // 16 kib

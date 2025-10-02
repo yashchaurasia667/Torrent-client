@@ -10,7 +10,7 @@ type DownloadingSet struct {
 type Downloaded struct {
 	mu         sync.RWMutex
 	content    []byte
-	pieceCount int
+	pieceCount uint32
 }
 
 type DownloadResult struct {
@@ -44,7 +44,7 @@ func (s *DownloadingSet) Contains(idx uint32) bool {
 }
 
 /* ----------- DOWNLOADED FUNCTIONS ------------ */
-func NewDownloaded(length int) *Downloaded {
+func NewDownloaded(length uint32) *Downloaded {
 	return &Downloaded{content: make([]byte, length)}
 }
 
@@ -77,7 +77,7 @@ func (s *Downloaded) GetContent() []byte {
 	return copySlice
 }
 
-func (s *Downloaded) GetPieceCount() int {
+func (s *Downloaded) GetPieceCount() uint32 {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.pieceCount

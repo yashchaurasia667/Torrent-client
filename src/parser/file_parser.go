@@ -9,31 +9,32 @@ import (
 )
 
 type Torrent struct {
-	Announce     string
-	AnnounceList []string
-	CreatedBy    string
-	CreationDate *time.Time
-	Comment      string
-	Encoding     string
-	Info         InfoDict
-	InfoHash     []byte
-	TotalLength  uint64
-	Magnet       string
+	Announce         string
+	AnnounceList     []string
+	CreatedBy        string
+	CreationDate     *time.Time
+	Comment          string
+	Encoding         string
+	Info             InfoDict
+	InfoHash         []byte
+	HasMultipleFiles bool
+	TotalLength      uint64
+	Magnet           string
 }
 
 type InfoDict struct {
 	Name        string
-	Length      int64
+	Length      uint64
 	PieceLength uint64
 	Pieces      []byte
 	PieceHashes [][]byte
-	PieceCount  int
+	PieceCount  uint32
 	Private     bool
 	Files       []InfoFile
 }
 
 type InfoFile struct {
-	Length int64
+	Length uint64
 	Path   []string
 }
 
@@ -137,25 +138,25 @@ func (r *Reader) readStringList() ([]string, error) {
 	return elems, nil
 }
 
-func (r *Reader) readInt() (int64, error) {
+func (r *Reader) readInt() (uint64, error) {
 	err := r.expectByte('i')
 	if err != nil {
 		return 0, err
 	}
 
-	var num int64 = 0
+	var num uint64 = 0
 	for {
 		ch, err := r.readByte()
 		if err != nil {
 			return 0, err
 		}
 
-		// fmt.Println(ch)
 		if ch == 'e' {
 			break
 		}
 
-		num = num*10 + int64(ch-'0')
+		// num = num*10 + uint64(ch-'0')
+		num = num*10 + uint64(ch-'0')
 	}
 
 	return num, nil
@@ -324,8 +325,6 @@ func (r *Reader) readInfo() (*InfoDict, error) {
 			if err != nil {
 				return nil, err
 			}
-			// DEBUG
-			// fmt.Println("name ", s)
 			info.Name = s
 
 		case "length":
@@ -333,8 +332,6 @@ func (r *Reader) readInfo() (*InfoDict, error) {
 			if err != nil {
 				return nil, err
 			}
-			// DEBUG
-			// fmt.Println("length ", i)
 			info.Length = i
 
 		case "piece length":
@@ -342,12 +339,10 @@ func (r *Reader) readInfo() (*InfoDict, error) {
 			if err != nil {
 				return nil, err
 			}
-			// DEBUG
-			// fmt.Println("piece length ", i)
 			info.PieceLength = uint64(i)
 
 		case "pieces":
-			var piecesLen int64 = 0
+			var piecesLen uint32 = 0
 			for {
 				ch, err := r.readByte()
 				if err != nil {
@@ -362,13 +357,13 @@ func (r *Reader) readInfo() (*InfoDict, error) {
 					return nil, fmt.Errorf("invalid format for pieces in info dict")
 				}
 
-				piecesLen = piecesLen*10 + int64(ch-'0')
+				piecesLen = piecesLen*10 + uint32(ch-'0')
 			}
 			info.Pieces = r.b[r.pos : r.pos+int(piecesLen)]
 			r.pos += int(piecesLen)
 
 			// CALCULATE PIECE HASHES
-			info.PieceCount = int(piecesLen / 20)
+			info.PieceCount = piecesLen / 20
 
 			pieceHashes := make([][]byte, info.PieceCount)
 			for i := range info.PieceCount {
@@ -383,8 +378,6 @@ func (r *Reader) readInfo() (*InfoDict, error) {
 			if err != nil {
 				return nil, err
 			}
-			// DEBUG
-			// fmt.Println("private ", i)
 			info.Private = (i != 0)
 
 		case "files":
@@ -392,8 +385,6 @@ func (r *Reader) readInfo() (*InfoDict, error) {
 			if err != nil {
 				return nil, err
 			}
-			// DEBUG
-			// fmt.Println("files ", files)
 			info.Files = files
 
 		default:
@@ -411,9 +402,6 @@ func AssembleTorrent(b []byte) (*Torrent, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	// DEBUG
-	// fmt.Println(meta.Announce)
 
 	return meta, nil
 }
@@ -450,7 +438,6 @@ func DecodeTorrent(data []byte) (*Torrent, error) {
 				return nil, err
 			}
 			meta.Announce = s
-			// fmt.Println("hello announce")
 
 		case "announce-list":
 			elems, err := r.readStringList()
@@ -458,7 +445,6 @@ func DecodeTorrent(data []byte) (*Torrent, error) {
 				return nil, err
 			}
 			meta.AnnounceList = elems
-			// fmt.Println("hello announce list")
 
 		case "comment":
 			s, err := r.readString()
@@ -466,7 +452,6 @@ func DecodeTorrent(data []byte) (*Torrent, error) {
 				return nil, err
 			}
 			meta.Comment = s
-			// fmt.Println("hello comment")
 
 		case "created by":
 			s, err := r.readString()
@@ -474,16 +459,14 @@ func DecodeTorrent(data []byte) (*Torrent, error) {
 				return nil, err
 			}
 			meta.CreatedBy = s
-			// fmt.Println("hello creator")
 
 		case "creation date":
 			i, err := r.readInt()
 			if err != nil {
 				return nil, err
 			}
-			t := time.Unix(i, 0).UTC()
+			t := time.Unix(int64(i), 0).UTC()
 			meta.CreationDate = &t
-			// fmt.Println("hello date")
 
 		case "encoding":
 			s, err := r.readString()
@@ -491,7 +474,6 @@ func DecodeTorrent(data []byte) (*Torrent, error) {
 				return nil, err
 			}
 			meta.Encoding = s
-			// fmt.Println("hello encoding")
 
 		case "info":
 			infoStart := r.pos
@@ -502,15 +484,22 @@ func DecodeTorrent(data []byte) (*Torrent, error) {
 			infoEnd := r.pos
 			meta.Info = *info
 			meta.InfoHash = GetSha1Hash(r.b[infoStart:infoEnd])
-			// DEBUG
-			// fmt.Println("hello info")
-			// fmt.Println("info hash: ", meta.InfoHash)
+
+			if len(meta.Info.Files) > 0 {
+				meta.HasMultipleFiles = true
+			}
 
 		default:
 			r.skipAny()
-			// fmt.Println("hello default")
 		}
+	}
 
+	if meta.HasMultipleFiles {
+		for _, i := range meta.Info.Files {
+			// fmt.Printf("%s of size %d\n", i.Path[len(i.Path)-1], i.Length)
+			meta.TotalLength += i.Length
+		}
+	} else {
 		meta.TotalLength = uint64(meta.Info.Length)
 	}
 
@@ -520,7 +509,6 @@ func DecodeTorrent(data []byte) (*Torrent, error) {
 func Test(path string) (*Torrent, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		// fmt.Fprintln(os.Stderr, "Failed to open file ", err)
 		return nil, err
 	}
 

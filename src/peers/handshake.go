@@ -7,7 +7,7 @@ import (
 	"net"
 	"strconv"
 	"time"
-	"torrent-client/parser"
+	"torrent-client/src/parser"
 )
 
 /*

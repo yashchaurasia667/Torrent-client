@@ -6,10 +6,9 @@ import (
 	"path/filepath"
 )
 
-func WritePiece(pieceIndex uint32, piece []byte, pathList []string) error {
+func WritePiece(pieceIndex uint32, piece []byte, outDir string) error {
 	fileName := fmt.Sprintf("piece%d.part", pieceIndex)
-	fullPathList := append(pathList, fileName)
-	fullPath := filepath.Join(fullPathList...)
+	fullPath := filepath.Join(outDir, fileName)
 
 	fmt.Println(fullPath)
 
