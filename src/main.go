@@ -7,8 +7,8 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"torrent-client/src/parser"
 	"torrent-client/src/download"
+	"torrent-client/src/parser"
 	"torrent-client/src/peers"
 	"torrent-client/src/utils"
 )
@@ -31,6 +31,27 @@ func check(path string, outDir string) {
 		fmt.Fprintln(os.Stderr, "Failed to create out directory.")
 		os.Exit(1)
 	}
+}
+
+func GetPeers(t *parser.Torrent) (*parser.Response, error) {
+	res, err := peers.RequestTracker(t, t.Announce)
+	if err == nil {
+		return res, nil
+	} else {
+		fmt.Fprintln(os.Stderr, err)
+	}
+
+	for _, url := range t.AnnounceList {
+		err = nil
+		res, err = peers.RequestTracker(t, url)
+		if err == nil {
+			return res, nil
+		} else {
+			fmt.Fprintln(os.Stderr, err)
+		}
+	}
+
+	return nil, err
 }
 
 func getNextPieceIndex(downloaded []byte, bitField []byte, downloading *utils.DownloadingSet) (int, int, uint32, error) {
@@ -59,7 +80,7 @@ downloading: channel containing info about all the pieces that are currently dow
 wg: waitgroup to create a joining point to the main function
 */
 
-func GetPeerAndDownload(peer parser.Peer, t *parser.Torrent, downloaded *utils.Downloaded, peerId []byte, downloading *utils.DownloadingSet, outDir string) error {
+func HandshakeNDownload(peer parser.Peer, t *parser.Torrent, downloaded *utils.Downloaded, peerId []byte, downloading *utils.DownloadingSet, outDir string) error {
 	// var pieces []utils.DownloadResult
 	c, err := peers.PerformHandshake(peer, t.InfoHash, peerId)
 	if err != nil || c == nil {
@@ -136,11 +157,13 @@ func main() {
 	peerId := peers.GetPeerId()
 	for {
 		// 1. get peers from traker
-		res, err := peers.RequestTracker(t)
+		// res, err := peers.RequestTracker(t)
+		res, err := GetPeers(t)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
+
 		fmt.Printf("Total Length: %d, Piece Length: %d, block size: %d, Piece Count: %d\n", t.TotalLength, t.Info.PieceLength, download.BLOCK_SIZE, t.Info.PieceCount)
 
 		// 2. send interested to all the peers and wait for unchoke
@@ -160,7 +183,7 @@ func main() {
 					wg.Done()
 				}()
 				// 4. download the piece
-				err := GetPeerAndDownload(p, t, downloaded, []byte(peerId), downloading, args[2])
+				err := HandshakeNDownload(p, t, downloaded, []byte(peerId), downloading, args[2])
 				if err != nil {
 					fmt.Printf("Error: %s\n", err)
 					return

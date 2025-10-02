@@ -7,8 +7,8 @@ GO_OUT := ./out
 
 # Directories
 SRC_DIR := ./src/parser
-OBJ_DIR := build
-BIN_DIR := bin
+OBJ_DIR := ./build
+BIN_DIR := ./bin
 TARGET := $(BIN_DIR)/parser
 
 # Source and object files
@@ -16,7 +16,7 @@ SRCS := $(wildcard $(SRC_DIR)/*.c)
 OBJS := $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(SRCS))
 
 # Default rule
-all: go-build
+all: run
 
 # Link the target
 $(TARGET): $(OBJS) | $(BIN_DIR)
@@ -32,7 +32,8 @@ $(BIN_DIR) $(OBJ_DIR):
 
 # Clean build artifacts
 clean:
-	rm -r
+	rm -r $(GO_OUT)
+	rm -r $(BIN_DIR)
 
 parser: $(TARGET)
 	./$(TARGET) ./src/parser/test_files/single_file.torrent
@@ -43,7 +44,7 @@ go-build: $(GO_SRC) | $(BIN_DIR)
 	$(GO) -o ./$(BIN_DIR) $(GO_SRC)
 
 run: $(GO_SRC)
-	$(GO) run $(GO_SRC)/main.go $(GO_SRC)/test_files/multiple_files.torrent $(GO_OUT)
+	$(GO) run $(GO_SRC)/main.go $(GO_SRC)/test_files/small.torrent $(GO_OUT)
 
 torrent-client: go-build
 	./$(BIN_DIR)/torrent-client
