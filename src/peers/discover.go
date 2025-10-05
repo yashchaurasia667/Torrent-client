@@ -188,8 +188,7 @@ func RequestTracker(t *parser.Torrent, announce string) (*parser.Response, error
 		}
 		return &res, nil
 	} else {
-		fmt.Println("This is an unknown protocol", u.Scheme)
-		return nil, nil
+		return nil, fmt.Errorf("this is an unknown protocol %s", u.Scheme)
 	}
 
 }

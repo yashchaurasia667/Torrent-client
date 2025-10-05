@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,12 +34,19 @@ func check(path string, outDir string) {
 	}
 }
 
+func getDownloadedLen(pieceCount uint32) uint32 {
+	len := pieceCount / 8
+	if pieceCount%8 != 0 {
+		len += 1
+	}
+	return len
+}
+
 func GetPeers(t *parser.Torrent) (*parser.Response, error) {
 	res, err := peers.RequestTracker(t, t.Announce)
 	if err == nil {
 		return res, nil
 	} else {
-		fmt.Fprintln(os.Stderr, err)
 	}
 
 	for _, url := range t.AnnounceList {
@@ -47,7 +55,6 @@ func GetPeers(t *parser.Torrent) (*parser.Response, error) {
 		if err == nil {
 			return res, nil
 		} else {
-			fmt.Fprintln(os.Stderr, err)
 		}
 	}
 
@@ -127,6 +134,12 @@ func HandshakeNDownload(peer parser.Peer, t *parser.Torrent, downloaded *utils.D
 }
 
 func main() {
+	/*
+		args => command line arguments
+		wg => wait group to synchronize main with handshakeNdownload
+		downloading => map to mark the pieces that are downloading
+		threadLimit => to limit maximum concurrent downloads to value of CONCURRENT_DOWNLOADS
+	*/
 	args := os.Args
 	var wg sync.WaitGroup
 	downloading := utils.NewDownloadingSet()
@@ -153,7 +166,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	downloaded := utils.NewDownloaded(t.Info.PieceCount/8 + t.Info.PieceCount%8)
+	downloaded := utils.NewDownloaded(getDownloadedLen(t.Info.PieceCount))
 	peerId := peers.GetPeerId()
 	for {
 		// 1. get peers from traker
@@ -168,6 +181,10 @@ func main() {
 
 		// 2. send interested to all the peers and wait for unchoke
 		// 3. when unchoked get the bitfield and get next downloadable piece
+		if len(res.Peers) == 0 {
+			fmt.Println("No peers")
+			os.Exit(1)
+		}
 		for _, peer := range res.Peers {
 			if peer.Ip.String() == "0.0.0.0" {
 				fmt.Println("no peers currently available retrying in 60 seconds")
@@ -185,16 +202,21 @@ func main() {
 				// 4. download the piece
 				err := HandshakeNDownload(p, t, downloaded, []byte(peerId), downloading, args[2])
 				if err != nil {
+					if err == io.EOF {
+						fmt.Fprintln(os.Stderr, "Error:", peer.Ip.String(), "dropped connection")
+						return
+					}
 					fmt.Printf("Error: %s\n", err)
 					return
 				}
 			}(peer)
 		}
+		wg.Wait()
 		// 5. after you've gone through all the peers but you still dont have all the pieces repeat all the steps again
 		if downloaded.GetPieceCount() == t.Info.PieceCount {
 			break
 		}
 
-		wg.Wait()
+		// wg.Wait()
 	}
 }
