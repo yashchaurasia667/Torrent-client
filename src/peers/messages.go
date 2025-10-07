@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"torrent-client/src/parser"
 )
 
 /*
@@ -74,23 +75,17 @@ func RequestPiece(conn net.Conn, pieceIndex uint32, begin uint32, blockLength ui
 		return nil, fmt.Errorf("expected length %d got %d", blockLength+9, binary.BigEndian.Uint32(resp[0:4]))
 	}
 
-	if err = SendHavePiece(conn, pieceIndex); err != nil {
-		return nil, err
-	}
-
 	return resp, nil
 }
 
-func SendHavePiece(conn net.Conn, pieceIndex uint32) error {
+func SendHavePiece(peers []parser.Peer, pieceIndex uint32) error {
 	msg := make([]byte, 9)
 	binary.BigEndian.PutUint32(msg[0:4], 5)
 	msg[4] = 4
 	binary.BigEndian.PutUint32(msg[5:9], pieceIndex)
-
-	_, err := conn.Write(msg)
-	if err != nil {
-		return err
-	}
-
 	return nil
+
+	// for _, peer := range peers {
+	// 	_, err := peer.
+	// }
 }

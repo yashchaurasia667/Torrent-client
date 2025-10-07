@@ -25,8 +25,11 @@ type Response struct {
 }
 
 type Peer struct {
-	Ip   net.IP
-	Port uint16
+	Ip       net.IP
+	Port     uint16
+	Conn     net.Conn
+	PeerId   [20]byte
+	Bitfield []byte
 }
 
 func (r *Reader) decodePeer() (*Peer, error) {

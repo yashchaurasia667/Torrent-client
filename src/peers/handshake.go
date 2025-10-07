@@ -23,14 +23,7 @@ TOTAL LENGTH -> 68 bytes
 */
 
 const PROTOCOL_STRING = "BitTorrent protocol"
-const HANDSHAKE_TIMEOUT = 3
-
-type ConnectedPeer struct {
-	Conn     net.Conn
-	Ip       net.IP
-	PeerId   [20]byte
-	Bitfield []byte
-}
+const HANDSHAKE_TIMEOUT = 10
 
 func buildHandshake(infoHash []byte, peerId []byte) []byte {
 	handshake := make([]byte, 68)
@@ -56,7 +49,7 @@ func validateResponse(resp []byte, infoHash []byte) error {
 	}
 }
 
-func PerformHandshake(peer parser.Peer, infoHash []byte, peerId []byte) (*ConnectedPeer, error) {
+func PerformHandshake(peer parser.Peer, infoHash []byte, peerId []byte) (*parser.Peer, error) {
 	dest := net.JoinHostPort(peer.Ip.String(), strconv.FormatUint(uint64(peer.Port), 10))
 	// fmt.Println("Connecting to", dest)
 
@@ -102,7 +95,7 @@ func PerformHandshake(peer parser.Peer, infoHash []byte, peerId []byte) (*Connec
 	}
 
 	// fmt.Println("Connected to peer", peer.Ip)
-	return &ConnectedPeer{conn, peer.Ip, [20]byte(resp[48:]), bitf}, nil
+	return &parser.Peer{Ip: peer.Ip, Port: peer.Port, Conn: conn, PeerId: [20]byte(resp[48:]), Bitfield: bitf}, nil
 }
 
 // func StartPeerConnections(peers []parser.Peer, infoHash []byte, peerId []byte) ([]ConnectedPeer, error) {

@@ -87,7 +87,7 @@ downloading: channel containing info about all the pieces that are currently dow
 wg: waitgroup to create a joining point to the main function
 */
 
-func HandshakeNDownload(peer parser.Peer, t *parser.Torrent, downloaded *utils.Downloaded, peerId []byte, downloading *utils.DownloadingSet, outDir string) error {
+func HandshakeNDownload(peer parser.Peer, t *parser.Torrent, downloaded *utils.Downloaded, peerId []byte, downloading *utils.DownloadingSet, outDir string, peerList []parser.Peer) error {
 	// var pieces []utils.DownloadResult
 	c, err := peers.PerformHandshake(peer, t.InfoHash, peerId)
 	if err != nil || c == nil {
@@ -122,6 +122,7 @@ func HandshakeNDownload(peer parser.Peer, t *parser.Torrent, downloaded *utils.D
 		fmt.Printf("Downloaded piece index %d from peer %s\n", pieceIndex, peer.Ip.String())
 		// pieces = append(pieces, utils.DownloadResult{DIndex: dIndex, BIndex: bIndex})
 		downloading.Remove(pieceIndex)
+		peers.SendHavePiece(peerList, pieceIndex)
 
 		err = download.WritePiece(pieceIndex, piece, filepath.Join(outDir, t.Info.Name))
 		if err != nil {
@@ -170,26 +171,26 @@ func main() {
 	peerId := peers.GetPeerId()
 	for {
 		// 1. get peers from traker
-		// res, err := peers.RequestTracker(t)
+		fmt.Println("Requesting a fresh list of peers from the tracker")
 		res, err := GetPeers(t)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			fmt.Fprintf(os.Stderr, "Failed to get peers from any tracker: %v\n", err)
+			time.Sleep(15 * time.Second)
+			continue
 		}
-
 		fmt.Printf("Total Length: %d, Piece Length: %d, block size: %d, Piece Count: %d\n", t.TotalLength, t.Info.PieceLength, download.BLOCK_SIZE, t.Info.PieceCount)
 
 		// 2. send interested to all the peers and wait for unchoke
 		// 3. when unchoked get the bitfield and get next downloadable piece
 		if len(res.Peers) == 0 {
-			fmt.Println("No peers")
-			os.Exit(1)
+			fmt.Println("No peers found, retrying in 30 seconds...")
+			time.Sleep(30 * time.Second)
+			continue
 		}
+
 		for _, peer := range res.Peers {
 			if peer.Ip.String() == "0.0.0.0" {
-				fmt.Println("no peers currently available retrying in 60 seconds")
-				time.Sleep(time.Second * 60)
-				break
+				continue
 			}
 
 			wg.Add(1)
@@ -199,8 +200,9 @@ func main() {
 					<-threadLimit
 					wg.Done()
 				}()
+
 				// 4. download the piece
-				err := HandshakeNDownload(p, t, downloaded, []byte(peerId), downloading, args[2])
+				err := HandshakeNDownload(p, t, downloaded, []byte(peerId), downloading, args[2], res.Peers)
 				if err != nil {
 					if err == io.EOF {
 						fmt.Fprintln(os.Stderr, "Error:", peer.Ip.String(), "dropped connection")
@@ -211,7 +213,10 @@ func main() {
 				}
 			}(peer)
 		}
+
+		// wait for all downloads in this batch to complete
 		wg.Wait()
+
 		// 5. after you've gone through all the peers but you still dont have all the pieces repeat all the steps again
 		if downloaded.GetPieceCount() == t.Info.PieceCount {
 			break
