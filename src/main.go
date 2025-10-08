@@ -14,7 +14,10 @@ import (
 	"torrent-client/src/utils"
 )
 
-const CONCURRENT_DONWLOADS = 10
+const (
+	CONCURRENT_DONWLOADS = 5
+	CONCURRENT_UPLOADS   = 4
+)
 
 func check(path string, outDir string) {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
@@ -87,17 +90,16 @@ downloading: channel containing info about all the pieces that are currently dow
 wg: waitgroup to create a joining point to the main function
 */
 
-func HandshakeNDownload(peer parser.Peer, t *parser.Torrent, downloaded *utils.Downloaded, peerId []byte, downloading *utils.DownloadingSet, outDir string, peerList []parser.Peer) error {
-	// var pieces []utils.DownloadResult
-	c, err := peers.PerformHandshake(peer, t.InfoHash, peerId)
-	if err != nil || c == nil {
+func HandshakeNDownload(peer *parser.Peer, t *parser.Torrent, downloaded *utils.Downloaded, peerId []byte, downloading *utils.DownloadingSet, outDir string, peerList []parser.Peer) error {
+	peer, err := peers.PerformHandshake(*peer, t.InfoHash, peerId, downloaded)
+	if err != nil || peer.Conn == nil {
 		return err
 	}
-	defer c.Conn.Close()
+	defer peer.Conn.Close()
 
-	intr := peers.CheckInterested(c.Conn)
+	intr := peers.CheckInterested(peer.Conn)
 	if !intr {
-		c.Conn.Close()
+		peer.Conn.Close()
 		return fmt.Errorf("%s is not interested", peer.Ip.String())
 	}
 	fmt.Printf("%s has unchoked you. Now requesting a piece\n", peer.Ip.String())
@@ -105,28 +107,24 @@ func HandshakeNDownload(peer parser.Peer, t *parser.Torrent, downloaded *utils.D
 	// download all the available pieces that peer offers
 	for {
 		tmp := append([]byte(nil), downloaded.GetContent()...)
-		dIndex, bIndex, pieceIndex, err := getNextPieceIndex(tmp, c.Bitfield, downloading)
+		dIndex, bIndex, pieceIndex, err := getNextPieceIndex(tmp, peer.Bitfield, downloading)
 		if err != nil {
 			return err
 		}
-		// downloaded[dIndex] += byte(1 << (7 - bIndex))
 		downloaded.Add(dIndex, bIndex)
 		downloading.Add(pieceIndex)
 
-		piece, err := download.DownloadPiece(c.Conn, c.Bitfield, t, pieceIndex)
+		piece, err := download.DownloadPiece(peer.Conn, peer.Bitfield, t, pieceIndex)
 		if err != nil {
-			// downloaded[dIndex] -= byte(1 << (7 - bIndex))
 			downloaded.Remove(dIndex, bIndex)
 			break
 		}
 		fmt.Printf("Downloaded piece index %d from peer %s\n", pieceIndex, peer.Ip.String())
-		// pieces = append(pieces, utils.DownloadResult{DIndex: dIndex, BIndex: bIndex})
 		downloading.Remove(pieceIndex)
 		peers.SendHavePiece(peerList, pieceIndex)
 
 		err = download.WritePiece(pieceIndex, piece, filepath.Join(outDir, t.Info.Name))
 		if err != nil {
-			// downloaded[dIndex] -= byte(1 << (7 - bIndex))
 			downloaded.Remove(dIndex, bIndex)
 			return err
 		}
@@ -202,7 +200,7 @@ func main() {
 				}()
 
 				// 4. download the piece
-				err := HandshakeNDownload(p, t, downloaded, []byte(peerId), downloading, args[2], res.Peers)
+				err := HandshakeNDownload(&p, t, downloaded, []byte(peerId), downloading, args[2], res.Peers)
 				if err != nil {
 					if err == io.EOF {
 						fmt.Fprintln(os.Stderr, "Error:", peer.Ip.String(), "dropped connection")

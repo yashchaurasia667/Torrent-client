@@ -78,14 +78,34 @@ func RequestPiece(conn net.Conn, pieceIndex uint32, begin uint32, blockLength ui
 	return resp, nil
 }
 
-func SendHavePiece(peers []parser.Peer, pieceIndex uint32) error {
+func SendHavePiece(peerList []parser.Peer, pieceIndex uint32) error {
 	msg := make([]byte, 9)
 	binary.BigEndian.PutUint32(msg[0:4], 5)
 	msg[4] = 4
 	binary.BigEndian.PutUint32(msg[5:9], pieceIndex)
-	return nil
 
-	// for _, peer := range peers {
-	// 	_, err := peer.
-	// }
+	for _, peer := range peerList {
+		if peer.Conn != nil {
+			_, err := peer.Conn.Write(msg)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func SendBitfield(bitfield []byte, conn net.Conn) error {
+	msgLen := uint32(len(bitfield) + 1)
+	msg := make([]byte, 4+msgLen)
+
+	binary.BigEndian.PutUint32(msg[0:4], msgLen)
+	msg[4] = 5
+	copy(msg[5:], bitfield)
+
+	_, err := conn.Write(msg)
+	if err != nil {
+		return err
+	}
+	return nil
 }

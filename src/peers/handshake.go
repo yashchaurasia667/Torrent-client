@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 	"torrent-client/src/parser"
+	"torrent-client/src/utils"
 )
 
 /*
@@ -49,7 +50,7 @@ func validateResponse(resp []byte, infoHash []byte) error {
 	}
 }
 
-func PerformHandshake(peer parser.Peer, infoHash []byte, peerId []byte) (*parser.Peer, error) {
+func PerformHandshake(peer parser.Peer, infoHash []byte, peerId []byte, downloaded *utils.Downloaded) (*parser.Peer, error) {
 	dest := net.JoinHostPort(peer.Ip.String(), strconv.FormatUint(uint64(peer.Port), 10))
 	// fmt.Println("Connecting to", dest)
 
@@ -81,6 +82,14 @@ func PerformHandshake(peer parser.Peer, infoHash []byte, peerId []byte) (*parser
 		// fmt.Println("Received infohash", resp[20:48])
 		conn.Close()
 		return nil, err
+	}
+
+	// Send my own bitfield
+	if downloaded.GetPieceCount() > 0 {
+		err := SendBitfield(downloaded.GetContent(), conn)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Get bitfield message
