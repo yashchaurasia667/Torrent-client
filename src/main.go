@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"io"
+	// "io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -176,7 +176,7 @@ func main() {
 			time.Sleep(15 * time.Second)
 			continue
 		}
-		fmt.Printf("Total Length: %d, Piece Length: %d, block size: %d, Piece Count: %d\n", t.TotalLength, t.Info.PieceLength, download.BLOCK_SIZE, t.Info.PieceCount)
+		fmt.Printf("Total Length: %d, Piece Length: %d, block size: %d, Piece Count: %d\n\n", t.TotalLength, t.Info.PieceLength, download.BLOCK_SIZE, t.Info.PieceCount)
 
 		// 2. send interested to all the peers and wait for unchoke
 		// 3. when unchoked get the bitfield and get next downloadable piece
@@ -202,12 +202,12 @@ func main() {
 				// 4. download the piece
 				err := HandshakeNDownload(&p, t, downloaded, []byte(peerId), downloading, args[2], res.Peers)
 				if err != nil {
-					if err == io.EOF {
-						fmt.Fprintln(os.Stderr, "Error:", peer.Ip.String(), "dropped connection")
-						return
-					}
-					fmt.Printf("Error: %s\n", err)
-					return
+					// if err == io.EOF {
+					// 	fmt.Fprintln(os.Stderr, "Error:", peer.Ip.String(), "dropped connection")
+					// 	return
+					// }
+					// fmt.Printf("Error: %s\n", err)
+					// return
 				}
 			}(peer)
 		}

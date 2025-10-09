@@ -10,7 +10,7 @@ func WritePiece(pieceIndex uint32, piece []byte, outDir string) error {
 	fileName := fmt.Sprintf("piece%d.part", pieceIndex)
 	fullPath := filepath.Join(outDir, fileName)
 
-	fmt.Println(fullPath)
+	// fmt.Println(fullPath)
 
 	dir := filepath.Dir(fullPath)
 	err := os.MkdirAll(dir, os.ModePerm)

@@ -1,6 +1,9 @@
 package utils
 
-import "sync"
+import (
+	"sync"
+	"torrent-client/src/parser"
+)
 
 type DownloadingSet struct {
 	mu sync.RWMutex
@@ -16,6 +19,11 @@ type Downloaded struct {
 type DownloadResult struct {
 	DIndex int
 	BIndex int
+}
+
+type AvailablePeers struct {
+	mu    sync.RWMutex
+	peers map[string]parser.Peer
 }
 
 /* ---------- DOWNOLADING SET FUNCTIONS ---------- */
@@ -81,4 +89,25 @@ func (s *Downloaded) GetPieceCount() uint32 {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.pieceCount
+}
+
+/*--------------------- PEER FUNCTIONS -----------------------*/
+func NewPeerList(peerList []parser.Peer) *AvailablePeers {
+	var av AvailablePeers
+	for _, peer := range peerList {
+		av.peers[peer.Ip.String()] = peer
+	}
+	return &av
+}
+
+func (s *AvailablePeers) Add(peer parser.Peer) {
+	s.mu.Lock()
+	s.peers[peer.Ip.String()] = peer
+	s.mu.Unlock()
+}
+
+func (s *AvailablePeers) Remove(peer parser.Peer) {
+	s.mu.Lock()
+	delete(s.peers, peer.Ip.String())
+	s.mu.Unlock()
 }
