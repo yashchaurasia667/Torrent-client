@@ -122,25 +122,64 @@ func UdpRequest(url string, infoHash []byte, peerId []byte, totalSize uint64) ([
 	return annResBuf[:n], annRes, nil
 }
 
-func HTTPRequest(url string, connection *HttpConnection) ([]byte, error) {
+func HTTPRequest(rawUrl string, connection *HttpConnection) ([]byte, error) {
+	parsed, err := url.Parse(rawUrl)
+	if err != nil {
+		return nil, fmt.Errorf("invalid tracker URL: %w", err)
+	}
+
+	host, port, err := net.SplitHostPort(parsed.Host)
+	if err != nil {
+		host = parsed.Host
+		port = "80"
+	}
+
+	addrs, err := net.LookupIP(host)
+	if err != nil {
+		return nil, fmt.Errorf("DNS lookup failed %w", err)
+	}
+
+	var ipv4 string
+	for _, addr := range addrs {
+		ipv4 = addr.String()
+		break
+	}
+	if ipv4 == "" {
+		return nil, fmt.Errorf("no IPV4 address found for %s", host)
+	}
+	targetUrl := *parsed
+	targetUrl.Host = net.JoinHostPort(ipv4, port)
+
 	connection.client = http.Client{Timeout: 15 * time.Second}
 
-	res, err := connection.client.Get(url)
-	if err != nil {
-		return nil, err
-	}
-	defer res.Body.Close()
+	var lastErr error
+	for attempt := 1; attempt <= 3; attempt++ {
+		res, err := connection.client.Get(targetUrl.String())
+		if err != nil {
+			lastErr = fmt.Errorf("attempt %d failed: %w", attempt, err)
+			fmt.Fprintf(os.Stderr, "HTTP tracker request failed (attempt %d): %v\n", attempt, err)
+			time.Sleep(time.Second * time.Duration(attempt)) // simple backoff
+			continue
+		}
+		defer res.Body.Close()
 
-	if res.StatusCode != http.StatusOK {
-		fmt.Fprintf(os.Stderr, "Received non 200 response: %d %s \n", res.StatusCode, res.Status)
-		os.Exit(1)
-	}
+		if res.StatusCode != http.StatusOK {
+			lastErr = fmt.Errorf("non-200 status: %d %s", res.StatusCode, res.Status)
+			fmt.Fprintf(os.Stderr, "Tracker responded with %s (attempt %d)\n", res.Status, attempt)
+			time.Sleep(time.Second * time.Duration(attempt))
+			continue
+		}
 
-	body, err := io.ReadAll(res.Body)
-	if err != nil {
-		return nil, err
+		body, err := io.ReadAll(res.Body)
+		if err != nil {
+			lastErr = fmt.Errorf("read body failed: %w", err)
+			fmt.Fprintf(os.Stderr, "Failed to read tracker response: %v\n", err)
+			time.Sleep(time.Second * time.Duration(attempt))
+			continue
+		}
+		return body, nil
 	}
-	return body, nil
+	return nil, fmt.Errorf("tracker request failed after 3 attempts: %w", lastErr)
 }
 
 func RequestTracker(t *parser.Torrent, announce string) (*parser.Response, error) {
