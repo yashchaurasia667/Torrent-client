@@ -26,7 +26,7 @@ func ReadLength(length []byte) uint32 {
 	return binary.BigEndian.Uint32(length) - 1
 }
 
-func CheckInterested(conn net.Conn) bool {
+func SendInterested(conn net.Conn) bool {
 	msg := []byte{0, 0, 0, 1, 2}
 	_, err := conn.Write(msg)
 	if err != nil {

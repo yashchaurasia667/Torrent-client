@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"fmt"
 	"sync"
 	"torrent-client/src/parser"
 )
@@ -33,12 +34,14 @@ func NewDownloadingSet() *DownloadingSet {
 }
 
 func (s *DownloadingSet) Add(idx uint32) {
+	fmt.Println("Downloading", idx)
 	s.mu.Lock()
 	s.m[idx] = struct{}{}
 	s.mu.Unlock()
 }
 
 func (s *DownloadingSet) Remove(idx uint32) {
+	fmt.Printf("Removed %d from downloading\n", idx)
 	s.mu.Lock()
 	delete(s.m, idx)
 	s.mu.Unlock()

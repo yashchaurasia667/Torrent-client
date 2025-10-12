@@ -3,10 +3,12 @@ package peers
 import (
 	crand "crypto/rand"
 	"encoding/binary"
+	"fmt"
 	"math/rand"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"torrent-client/src/parser"
 )
 
@@ -56,9 +58,17 @@ func GetPeerId() string {
 	return connection.peerId
 }
 
+func UrlEncode(b []byte) string {
+	var buf strings.Builder
+	for _, c := range b {
+		buf.WriteString(fmt.Sprintf("%%%02X", c))
+	}
+	return buf.String()
+}
+
 func generatePeerId() string {
-	prefix := "-" + INIT + VERSION
-	b := make([]byte, 13)
+	prefix := "-" + INIT + VERSION + "-"
+	b := make([]byte, 12)
 	for i := range b {
 		b[i] = charset[rand.Intn(len(charset))]
 	}
@@ -78,13 +88,13 @@ func buildTrackerUrl(trakerAddr string, infoHash []byte, totalLength uint64, con
 	}
 
 	q := url.Values{
-		"info_hash":  []string{string(infoHash[:])},
+		"info_hash":  []string{UrlEncode(infoHash[:])},
 		"peer_id":    []string{connection.peerId[:]},
 		"port":       []string{strconv.Itoa(PORT)},
 		"uploaded":   []string{"0"},
 		"downloaded": []string{"0"},
 		"left":       []string{strconv.Itoa(int(totalLength))},
-		"conpact":    []string{"1"},
+		"compact":    []string{"1"},
 	}
 	u.RawQuery = q.Encode()
 

@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	// "io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -58,6 +57,7 @@ func GetPeers(t *parser.Torrent) (*parser.Response, error) {
 		if err == nil {
 			return res, nil
 		} else {
+			fmt.Printf("Error: %s", err)
 		}
 	}
 
@@ -97,7 +97,7 @@ func HandshakeNDownload(peer *parser.Peer, t *parser.Torrent, downloaded *utils.
 	}
 	defer peer.Conn.Close()
 
-	intr := peers.CheckInterested(peer.Conn)
+	intr := peers.SendInterested(peer.Conn)
 	if !intr {
 		peer.Conn.Close()
 		return fmt.Errorf("%s is not interested", peer.Ip.String())
@@ -111,7 +111,6 @@ func HandshakeNDownload(peer *parser.Peer, t *parser.Torrent, downloaded *utils.
 		if err != nil {
 			return err
 		}
-		downloaded.Add(dIndex, bIndex)
 		downloading.Add(pieceIndex)
 
 		piece, err := download.DownloadPiece(peer.Conn, peer.Bitfield, t, pieceIndex)
@@ -120,6 +119,7 @@ func HandshakeNDownload(peer *parser.Peer, t *parser.Torrent, downloaded *utils.
 			break
 		}
 		fmt.Printf("Downloaded piece index %d from peer %s\n", pieceIndex, peer.Ip.String())
+		downloaded.Add(dIndex, bIndex)
 		downloading.Remove(pieceIndex)
 		peers.SendHavePiece(peerList, pieceIndex)
 
@@ -167,6 +167,7 @@ func main() {
 
 	downloaded := utils.NewDownloaded(getDownloadedLen(t.Info.PieceCount))
 	peerId := peers.GetPeerId()
+	fmt.Printf("Total Length: %d, Piece Length: %d, block size: %d, Piece Count: %d\n", t.TotalLength, t.Info.PieceLength, download.BLOCK_SIZE, t.Info.PieceCount)
 	for {
 		// 1. get peers from traker
 		fmt.Println("Requesting a fresh list of peers from the tracker")
@@ -176,7 +177,6 @@ func main() {
 			time.Sleep(15 * time.Second)
 			continue
 		}
-		fmt.Printf("Total Length: %d, Piece Length: %d, block size: %d, Piece Count: %d\n\n", t.TotalLength, t.Info.PieceLength, download.BLOCK_SIZE, t.Info.PieceCount)
 
 		// 2. send interested to all the peers and wait for unchoke
 		// 3. when unchoked get the bitfield and get next downloadable piece
@@ -202,16 +202,15 @@ func main() {
 				// 4. download the piece
 				err := HandshakeNDownload(&p, t, downloaded, []byte(peerId), downloading, args[2], res.Peers)
 				if err != nil {
-					// if err == io.EOF {
-					// 	fmt.Fprintln(os.Stderr, "Error:", peer.Ip.String(), "dropped connection")
+					// 	if err == io.EOF {
+					// 		fmt.Fprintln(os.Stderr, "Error:", peer.Ip.String(), "dropped connection")
+					// 		return
+					// 	}
+					// 	fmt.Printf("Error: %s\n", err)
 					// 	return
-					// }
-					// fmt.Printf("Error: %s\n", err)
-					// return
 				}
 			}(peer)
 		}
-
 		// wait for all downloads in this batch to complete
 		wg.Wait()
 

@@ -86,6 +86,7 @@ func PerformHandshake(peer parser.Peer, infoHash []byte, peerId []byte, download
 
 	// Send my own bitfield
 	if downloaded.GetPieceCount() > 0 {
+		fmt.Println("Sending own bitfield", downloaded.GetContent())
 		err := SendBitfield(downloaded.GetContent(), conn)
 		if err != nil {
 			return nil, err
