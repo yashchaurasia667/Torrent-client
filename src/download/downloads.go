@@ -92,17 +92,19 @@ func DownloadPiece(conn net.Conn, bitfield []byte, t *parser.Torrent, pieceIndex
 	piece := make([]byte, pieceLen)
 
 	for {
-		block, err := peers.RequestPiece(conn, pieceIndex, begin, BLOCK_SIZE)
+		requestSize := BLOCK_SIZE
+		remaining := uint32(pieceLen) - begin
+		if remaining < requestSize {
+			requestSize = remaining
+		}
+
+		block, err := peers.RequestPiece(conn, pieceIndex, begin, requestSize)
 		if err != nil {
 			return nil, err
 		}
-		if BLOCK_SIZE > uint32(pieceLen) {
-			copy(piece[begin:begin+uint32(pieceLen)], block[13:pieceLen+13])
-			begin += uint32(pieceLen)
-		} else {
-			copy(piece[begin:begin+BLOCK_SIZE], block[13:])
-			begin += BLOCK_SIZE
-		}
+
+		data := block[13:]
+		copy(piece[begin:], data)
 
 		if begin == uint32(pieceLen) {
 			break
