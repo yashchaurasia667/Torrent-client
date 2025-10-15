@@ -240,7 +240,7 @@ func Test() {
 		os.Exit(1)
 	}
 
-	t, err := parser.AssembleTorrent(data)
+	t, err := parser.DecodeTorrent(data)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Error while reading torrent file: ", err)
 		os.Exit(1)

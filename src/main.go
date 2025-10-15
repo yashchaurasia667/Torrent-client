@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -159,30 +160,37 @@ func main() {
 		os.Exit(1)
 	}
 
-	t, err := parser.AssembleTorrent(data)
+	t, err := parser.DecodeTorrent(data)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Error while reading torrent file: ", err)
 		os.Exit(1)
 	}
 
+	// [DEBUG]
+	// fmt.Println("Files: ")
+	// for _, file := range t.Info.Files {
+	// 	fmt.Println(file)
+	// }
+
 	downloaded := utils.NewDownloaded(getDownloadedLen(t.Info.PieceCount))
 	peerId := peers.GetPeerId()
 	fmt.Printf("Total Length: %d, Piece Length: %d, block size: %d, Piece Count: %d\n", t.TotalLength, t.Info.PieceLength, download.BLOCK_SIZE, t.Info.PieceCount)
+	res, err := GetPeers(t)
 	for {
 		// 1. get peers from traker
-		fmt.Println("Requesting a fresh list of peers from the tracker")
-		res, err := GetPeers(t)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to get peers from any tracker: %v\n", err)
-			time.Sleep(15 * time.Second)
+			fmt.Fprintf(os.Stderr, "Failed to get peers from any tracker: %v\nRetrying in 30 seconds...", err)
+			time.Sleep(30 * time.Second)
 			continue
 		}
 
 		// 2. send interested to all the peers and wait for unchoke
 		// 3. when unchoked get the bitfield and get next downloadable piece
 		if len(res.Peers) == 0 {
-			fmt.Println("No peers found, retrying in 30 seconds...")
-			time.Sleep(30 * time.Second)
+			fmt.Printf("No peers found, retrying in %d seconds...\n", res.Interval)
+			// fmt.Println("Requesting a fresh list of peers from the tracker")
+			time.Sleep(time.Duration(res.Interval))
+			res, err = GetPeers(t)
 			continue
 		}
 
@@ -202,12 +210,12 @@ func main() {
 				// 4. download the piece
 				err := HandshakeNDownload(&p, t, downloaded, []byte(peerId), downloading, args[2], res.Peers)
 				if err != nil {
-					// 	if err == io.EOF {
-					// 		fmt.Fprintln(os.Stderr, "Error:", peer.Ip.String(), "dropped connection")
-					// 		return
-					// 	}
-					// 	fmt.Printf("Error: %s\n", err)
-					// 	return
+					if err == io.EOF {
+						fmt.Fprintln(os.Stderr, "Error:", peer.Ip.String(), "dropped connection")
+						return
+					}
+					fmt.Printf("Error: %s\n", err)
+					return
 				}
 			}(peer)
 		}

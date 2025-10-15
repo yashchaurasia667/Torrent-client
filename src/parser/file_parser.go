@@ -397,14 +397,14 @@ func (r *Reader) readInfo() (*InfoDict, error) {
 
 // TORRENT FUNCTIONS
 
-func AssembleTorrent(b []byte) (*Torrent, error) {
-	meta, err := DecodeTorrent(b)
-	if err != nil {
-		return nil, err
-	}
+// func AssembleTorrent(b []byte) (*Torrent, error) {
+// 	meta, err := DecodeTorrent(b)
+// 	if err != nil {
+// 		return nil, err
+// 	}
 
-	return meta, nil
-}
+// 	return meta, nil
+// }
 
 func DecodeTorrent(data []byte) (*Torrent, error) {
 	r := NewReader(data)
