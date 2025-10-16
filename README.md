@@ -10,15 +10,18 @@ $ cd torrent-client
 ## Parser
 
 ```bash
-$ make
+$ make parser
 $ ./bin/parser {name_of_torrent_file_to_decode}
 ```
 
-## Encoder
+## Test
 
 ```bash
-$ cd ./src/encoder
-$ go run .
+$ make
 ```
 
-## Bittorrent Protocol 
+## Download torrent
+
+```bash
+$ go run {path_to_torrent_file} {path_to_output_directory}
+```
