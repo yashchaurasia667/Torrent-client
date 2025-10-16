@@ -34,28 +34,45 @@ func WritePiece(pieceIndex uint32, piece []byte, outDir string) error {
 func AssembleTorrent(t *parser.Torrent, outDir string) error {
 	files, err := os.ReadDir(outDir)
 	if err != nil {
-		return fmt.Errorf("failed to read directory: %s\n", outDir)
+		return fmt.Errorf("failed to read directory: %s", outDir)
 	}
 	if len(files) != int(t.Info.PieceCount) {
 		return fmt.Errorf("file not completely downloaded: expected piece count %d got %d", t.Info.PieceCount, len(files))
 	}
 
 	var f FileReader
+	var pieceCounter uint32 = 0
 	for _, infoFile := range t.Info.Files {
 		var path = outDir
 		f.FileName = infoFile.Path[len(infoFile.Path)-1]
 
 		if len(infoFile.Path) > 1 {
-			parentDirs := []string{outDir}
-			parentDirs = append(parentDirs, infoFile.Path[:len(infoFile.Path)-1]...)
-			path = filepath.Join(parentDirs...)
+			fullPath := []string{outDir}
+			fullPath = append(fullPath, infoFile.Path...)
+			path = filepath.Join(fullPath...)
 
 			if _, err := os.Stat(path); os.IsNotExist(err) {
-				err := os.MkdirAll(path, 0644)
+				err := os.MkdirAll(path, os.ModePerm)
 				if err != nil {
 					return err
 				}
 			}
+		}
+
+		for {
+			var piecePath = filepath.Join(outDir, t.Info.Name, fmt.Sprintf("piece%d.part", pieceCounter))
+			data, err := os.ReadFile(piecePath)
+			if err != nil {
+				return fmt.Errorf("failed to read a file[%s]: %s", piecePath, err)
+			}
+			err = os.WriteFile(path, data, os.ModeAppend)
+			if err != nil {
+				return fmt.Errorf("failed to write a file[%s]: %s", f.FileName, err)
+			}
+
+			f.Pos += uint32(len(data))
+			pieceCounter++
+
 		}
 	}
 

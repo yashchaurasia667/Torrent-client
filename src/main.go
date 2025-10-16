@@ -225,6 +225,8 @@ func main() {
 		// 5. after you've gone through all the peers but you still dont have all the pieces repeat all the steps again
 		if downloaded.GetPieceCount() == t.Info.PieceCount {
 			break
+		} else {
+			time.Sleep(15 * time.Second)
 		}
 
 		// wg.Wait()

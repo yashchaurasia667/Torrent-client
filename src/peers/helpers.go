@@ -67,8 +67,8 @@ func UrlEncode(b []byte) string {
 }
 
 func generatePeerId() string {
-	prefix := "-" + INIT + VERSION + "-"
-	b := make([]byte, 12)
+	prefix := "-" + INIT + VERSION
+	b := make([]byte, 13)
 	for i := range b {
 		b[i] = charset[rand.Intn(len(charset))]
 	}

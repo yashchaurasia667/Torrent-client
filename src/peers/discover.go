@@ -14,8 +14,8 @@ import (
 )
 
 const PORT = 6881
-const INIT = "GT"
-const VERSION = "0002"
+const INIT = "FS"
+const VERSION = "0003"
 const NUM_PEERS = 50
 const RETRY_ATTEMPTS = 3
 const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
