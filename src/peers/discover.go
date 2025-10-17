@@ -13,23 +13,18 @@ import (
 	"torrent-client/src/parser"
 )
 
-const PORT = 6881
-const INIT = "FS"
-const VERSION = "0003"
-const NUM_PEERS = 50
 const RETRY_ATTEMPTS = 3
-const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 var connection HttpConnection
 
 func UdpRequest(url string, infoHash []byte, peerId []byte, totalSize uint64) ([]byte, *AnnounceResponse, error) {
 	trackerAddr := strings.Split(strings.Split(url, "://")[1], "/")[0]
-	addr, err := net.ResolveUDPAddr("udp4", trackerAddr)
+	addr, err := net.ResolveUDPAddr("udp", trackerAddr)
 	if err != nil {
 		return nil, nil, fmt.Errorf("resolve udp: %w", err)
 	}
 
-	conn, err := net.DialUDP("udp4", nil, addr)
+	conn, err := net.DialUDP("udp", nil, addr)
 	if err != nil {
 		return nil, nil, fmt.Errorf("dial udp: %w", err)
 	}

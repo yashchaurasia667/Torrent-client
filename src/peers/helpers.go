@@ -3,14 +3,18 @@ package peers
 import (
 	crand "crypto/rand"
 	"encoding/binary"
-	"fmt"
 	"math/rand"
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
 	"torrent-client/src/parser"
 )
+
+const PORT = 6881
+const INIT = "BT"
+const VERSION = "0003"
+const NUM_PEERS = 50
+const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 type ConnectionRequest struct {
 	ProtocolId    uint64
@@ -58,14 +62,6 @@ func GetPeerId() string {
 	return connection.peerId
 }
 
-func UrlEncode(b []byte) string {
-	var buf strings.Builder
-	for _, c := range b {
-		buf.WriteString(fmt.Sprintf("%%%02X", c))
-	}
-	return buf.String()
-}
-
 func generatePeerId() string {
 	prefix := "-" + INIT + VERSION
 	b := make([]byte, 13)
@@ -88,13 +84,13 @@ func buildTrackerUrl(trakerAddr string, infoHash []byte, totalLength uint64, con
 	}
 
 	q := url.Values{
-		"info_hash":  []string{UrlEncode(infoHash[:])},
+		"info_hash":  []string{string(infoHash[:])},
 		"peer_id":    []string{connection.peerId[:]},
 		"port":       []string{strconv.Itoa(PORT)},
 		"uploaded":   []string{"0"},
 		"downloaded": []string{"0"},
-		"left":       []string{strconv.Itoa(int(totalLength))},
-		"compact":    []string{"1"},
+		"left":       []string{strconv.FormatUint(totalLength, 10)},
+		"conpact":    []string{"1"},
 	}
 	u.RawQuery = q.Encode()
 

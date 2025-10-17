@@ -84,7 +84,7 @@ func GetNextDownloadablePiece(bitfield []byte, downloaded []byte) (int, int, err
 
 func DownloadPiece(conn net.Conn, bitfield []byte, t *parser.Torrent, pieceIndex uint32) ([]byte, error) {
 	pieceLen := t.Info.PieceLength
-	if pieceIndex == t.Info.PieceCount-1 && t.TotalLength%t.Info.PieceLength != 0 {
+	if pieceIndex == uint32(t.Info.PieceCount)-1 && t.TotalLength%t.Info.PieceLength != 0 {
 		fmt.Println("Last piece is smaller than the rest")
 		pieceLen = t.TotalLength % t.Info.PieceLength
 	}
@@ -92,20 +92,12 @@ func DownloadPiece(conn net.Conn, bitfield []byte, t *parser.Torrent, pieceIndex
 	piece := make([]byte, pieceLen)
 
 	for {
-		requestSize := BLOCK_SIZE
-		remaining := uint32(pieceLen) - begin
-		if remaining < requestSize {
-			requestSize = remaining
-		}
-
-		block, err := peers.RequestPiece(conn, pieceIndex, begin, requestSize)
+		block, err := peers.RequestPiece(conn, pieceIndex, begin, BLOCK_SIZE)
 		if err != nil {
 			return nil, err
 		}
-
-		data := block[13:]
-		copy(piece[begin:], data)
-
+		copy(piece[begin:begin+BLOCK_SIZE], block[13:])
+		begin += BLOCK_SIZE
 		if begin == uint32(pieceLen) {
 			break
 		}
