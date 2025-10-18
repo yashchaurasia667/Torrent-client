@@ -44,7 +44,7 @@ go-build: $(GO_SRC) | $(BIN_DIR)
 	$(GO) -o ./$(BIN_DIR) $(GO_SRC)
 
 run: $(GO_SRC)
-	$(GO) run $(GO_SRC)/main.go $(GO_SRC)/test_files/debian-installer.torrent $(GO_OUT)
+	$(GO) run $(GO_SRC)/main.go $(GO_SRC)/test_files/coding.torrent $(GO_OUT)
 
 torrent-client: go-build
 	./$(BIN_DIR)/torrent-client

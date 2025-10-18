@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"io"
+	// "io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -173,13 +173,16 @@ func main() {
 	// }
 
 	downloaded := utils.NewDownloaded(getDownloadedLen(t.Info.PieceCount))
+	// test last piece
+	// downloaded.SetAll(t.Info.PieceCount - 1)
+
 	peerId := peers.GetPeerId()
 	fmt.Printf("Total Length: %d, Piece Length: %d, block size: %d, Piece Count: %d\n", t.TotalLength, t.Info.PieceLength, download.BLOCK_SIZE, t.Info.PieceCount)
 	res, err := GetPeers(t)
 	for {
 		// 1. get peers from traker
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to get peers from any tracker: %v\nRetrying in 30 seconds...", err)
+			fmt.Fprintf(os.Stderr, "Failed to get peers from any tracker: %v\nRetrying in 30 seconds...\n", err)
 			time.Sleep(30 * time.Second)
 			continue
 		}
@@ -210,12 +213,12 @@ func main() {
 				// 4. download the piece
 				err := HandshakeNDownload(&p, t, downloaded, []byte(peerId), downloading, args[2], res.Peers)
 				if err != nil {
-					if err == io.EOF {
-						fmt.Fprintln(os.Stderr, "Error:", peer.Ip.String(), "dropped connection")
-						return
-					}
-					fmt.Printf("Error: %s\n", err)
-					return
+					// 	if err == io.EOF {
+					// 		fmt.Fprintln(os.Stderr, "Error:", peer.Ip.String(), "dropped connection")
+					// 		return
+					// 	}
+					// 	fmt.Printf("Error: %s\n", err)
+					// 	return
 				}
 			}(peer)
 		}
@@ -231,4 +234,5 @@ func main() {
 
 		// wg.Wait()
 	}
+
 }

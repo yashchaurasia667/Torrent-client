@@ -114,7 +114,7 @@ func buildAnnounceRequest(connID uint64, txID uint32, infoHash, peerID []byte, t
 	binary.BigEndian.PutUint32(buf[80:84], 2)             // event = started
 	binary.BigEndian.PutUint32(buf[84:88], 0)             // ip = default
 	binary.BigEndian.PutUint32(buf[88:92], rand.Uint32()) // key
-	binary.BigEndian.PutUint32(buf[92:96], 50)            // num_want (50 peers)
+	binary.BigEndian.PutUint32(buf[92:96], 0xFFFFFFFF)            // num_want (50 peers)
 	binary.BigEndian.PutUint16(buf[96:98], uint16(6881))  // port
 
 	return buf

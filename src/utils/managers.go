@@ -1,7 +1,7 @@
 package utils
 
 import (
-	"fmt"
+	// "fmt"
 	"sync"
 	"torrent-client/src/parser"
 )
@@ -34,14 +34,14 @@ func NewDownloadingSet() *DownloadingSet {
 }
 
 func (s *DownloadingSet) Add(idx uint32) {
-	fmt.Println("Downloading", idx)
+	// fmt.Println("Downloading", idx)
 	s.mu.Lock()
 	s.m[idx] = struct{}{}
 	s.mu.Unlock()
 }
 
 func (s *DownloadingSet) Remove(idx uint32) {
-	fmt.Printf("Removed %d from downloading\n", idx)
+	// fmt.Printf("Removed %d from downloading\n", idx)
 	s.mu.Lock()
 	delete(s.m, idx)
 	s.mu.Unlock()
@@ -57,6 +57,17 @@ func (s *DownloadingSet) Contains(idx uint32) bool {
 /* ----------- DOWNLOADED FUNCTIONS ------------ */
 func NewDownloaded(length uint32) *Downloaded {
 	return &Downloaded{content: make([]byte, length)}
+}
+
+func (s *Downloaded) SetAll(pieceIndex uint32) {
+	s.mu.Lock()
+	for i := range s.content {
+		if (i+1)*8 >= int(pieceIndex) {
+			continue
+		}
+		s.content[i] = 255
+	}
+	s.mu.Unlock()
 }
 
 func (s *Downloaded) Add(dIndex int, bIndex int) {
