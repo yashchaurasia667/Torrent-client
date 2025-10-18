@@ -112,6 +112,10 @@ func HandshakeNDownload(peer *parser.Peer, t *parser.Torrent, downloaded *utils.
 		if err != nil {
 			return err
 		}
+		if dIndex == -1 || bIndex == -1 {
+			return nil
+		}
+
 		downloading.Add(pieceIndex)
 
 		piece, err := download.DownloadPiece(peer.Conn, peer.Bitfield, t, pieceIndex)
@@ -235,4 +239,21 @@ func main() {
 		// wg.Wait()
 	}
 
+	download.AssembleFiles(t, args[2], true)
 }
+
+// [DEBUG] -> ASSEMBLE TESTING
+// func main() {
+// 	data, err := os.ReadFile("./src/test_files/coding.torrent")
+// 	if err != nil {
+// 		fmt.Println(err)
+// 	}
+// 	t, err := parser.DecodeTorrent(data)
+// 	if err != nil {
+// 		fmt.Println(err)
+// 	}
+// 	err = download.AssembleFiles(t, "./out", true)
+// 	if err != nil {
+// 		fmt.Println(err)
+// 	}
+// }

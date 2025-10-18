@@ -134,6 +134,7 @@ func AssembleFiles(t *parser.Torrent, outDir string, deletePieces bool) error {
 	if _, err := os.Stat(baseDir); os.IsNotExist(err) {
 		return fmt.Errorf("output directory %s does not exist", baseDir)
 	}
+	fmt.Println("baseDir:", baseDir)
 
 	pieceCount := int(t.Info.PieceCount)
 	// pieceLen := int(t.Info.PieceLength)
@@ -184,7 +185,7 @@ func AssembleFiles(t *parser.Torrent, outDir string, deletePieces bool) error {
 
 	if !t.HasMultipleFiles {
 		// Single-file torrent
-		outputFile := filepath.Join(baseDir)
+		outputFile := filepath.Join(baseDir, t.Info.Name)
 		out, err := os.Create(outputFile)
 		if err != nil {
 			return fmt.Errorf("failed to create output file: %w", err)
@@ -236,7 +237,7 @@ func AssembleFiles(t *parser.Torrent, outDir string, deletePieces bool) error {
 	}
 
 	if deletePieces {
-		for i := 0; i < pieceCount; i++ {
+		for i := range pieceCount {
 			path := piecePath(i)
 			os.Remove(path)
 		}
